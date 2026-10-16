@@ -17,11 +17,20 @@ export type IssueItem = {
   labels: string[];
 };
 
+export type IndexCoverage = {
+  truncated: boolean;
+  complete: boolean;
+  readme: boolean;
+  contributing: boolean;
+  tests: boolean;
+};
+
 export type RepoStats = {
   examined: number;
   indexed: number;
   skipped: number;
   limitations: string[];
+  coverage: IndexCoverage;
 };
 
 export type RepoSnapshot = {
@@ -40,11 +49,45 @@ export type Chunk = {
   score: number;
 };
 
+export type CommandStatus =
+  | "Documented"
+  | "Configured"
+  | "Inferred"
+  | "Conflicting"
+  | "Not Verified"
+  | "Executed Successfully"
+  | "Execution Failed";
+
 export type SetupCommand = {
   command: string;
   source: string;
-  status: "Documented" | "Configured";
+  status: CommandStatus;
   prerequisites: string[];
+  note?: string;
+};
+
+export type ModelHealth = {
+  available: boolean;
+  model: string;
+  baseUrl: string;
+  detail: string;
+};
+
+export type AnswerOrigin = "model" | "insufficient" | "model-unavailable";
+
+export type GroundedAnswer = {
+  origin: AnswerOrigin;
+  answer: string;
+  chunks: Chunk[];
+  warning?: string;
+  model?: string;
+};
+
+export type PlanResult = {
+  origin: "model" | "model-unavailable" | "insufficient";
+  markdown: string;
+  warning?: string;
+  model?: string;
 };
 
 export type Gap = {

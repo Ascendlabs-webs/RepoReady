@@ -1,4 +1,4 @@
-import type { RepoSnapshot } from "./types";
+import type { RepoSnapshot } from "./types.ts";
 
 export const SAMPLE_REPO: RepoSnapshot = {
   simulated: true,
@@ -62,5 +62,12 @@ if __name__ == "__main__":
     indexed: 5,
     skipped: 0,
     limitations: ["Offline sample. Only the five demo files are indexed. Nothing here was fetched from GitHub."],
+    coverage: {
+      truncated: false,
+      complete: true,
+      readme: true,
+      contributing: true,
+      tests: true,
+    },
   },
 };

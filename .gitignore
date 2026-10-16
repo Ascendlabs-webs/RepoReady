@@ -9,5 +9,6 @@ artifacts/
 *.log
 dist/
 .DS_Store
+models/
+*.gguf
 
-.node_modules.lock

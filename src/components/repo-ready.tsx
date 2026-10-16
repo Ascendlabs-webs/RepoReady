@@ -1,9 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileText, Search, ShieldCheck, GitPullRequest, AlertTriangle, Box } from "lucide-react";
 import { SAMPLE_REPO } from "@/lib/repoready/sample";
-import { answerQuestion, contributionPlan, documentationGaps, gapReport, setupCommands } from "@/lib/repoready/engine";
+import { analyzeSetup, documentationGaps, gapReport } from "@/lib/repoready/engine";
 import { ingestGithubRepo } from "@/lib/repoready/github.functions";
-import type { Chunk, RepoSnapshot } from "@/lib/repoready/types";
+import { askRepository, modelHealth, planRepository } from "@/lib/repoready/model.functions";
+import { evidencePlan } from "@/lib/repoready/planner";
+import type { Chunk, GroundedAnswer, ModelHealth, RepoSnapshot } from "@/lib/repoready/types";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: Box },
@@ -27,13 +29,66 @@ export function RepoReady() {
   const [issueNumber, setIssueNumber] = useState(SAMPLE_REPO.issues[0]?.number ?? 1);
   const [plan, setPlan] = useState("");
   const [openFile, setOpenFile] = useState<string | null>("README.md");
+  const [health, setHealth] = useState<ModelHealth | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [planning, setPlanning] = useState(false);
+  const [grounded, setGrounded] = useState<GroundedAnswer | null>(null);
 
-  const commands = useMemo(() => setupCommands(snapshot.files), [snapshot]);
+  const commands = useMemo(() => analyzeSetup(snapshot.files), [snapshot]);
   const gaps = useMemo(() => documentationGaps(snapshot), [snapshot]);
-  const answer = useMemo(
-    () => (asked ? answerQuestion(snapshot.files, question) : null),
-    [asked, snapshot, question],
-  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void modelHealth({ data: {} })
+      .then((next) => {
+        if (!cancelled) setHealth(next);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHealth({
+            available: false,
+            model: "qwen3:4b",
+            baseUrl: "http://127.0.0.1:11434",
+            detail: "The model health check failed.",
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function ask() {
+    setAsked(true);
+    setAsking(true);
+    setGrounded(null);
+    try {
+      setGrounded(await askRepository({ data: { question, files: snapshot.files } }));
+    } catch (cause) {
+      setGrounded({
+        origin: "model-unavailable",
+        answer: "The question could not be sent to the model.",
+        chunks: [],
+        warning: cause instanceof Error ? cause.message : "The model request failed.",
+      });
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  async function buildPlan() {
+    setPlanning(true);
+    try {
+      const result = await planRepository({ data: { snapshot, issueNumber } });
+      const warning = result.warning ? `\n\n## Verification\n${result.warning}\n` : "";
+      setPlan(`${result.markdown}${warning}`);
+    } catch (cause) {
+      const fallback = evidencePlan(snapshot, issueNumber);
+      setPlan(`${fallback.markdown}\n\n## Verification\n${cause instanceof Error ? cause.message : "The model request failed."}\n`);
+    } finally {
+      setPlanning(false);
+    }
+  }
 
   async function analyze() {
     setError("");
@@ -48,6 +103,7 @@ export function RepoReady() {
       setIssueNumber(SAMPLE_REPO.issues[0]?.number ?? 1);
       setPlan("");
       setAsked(false);
+      setGrounded(null);
       setOpenFile("README.md");
       setTab("overview");
       return;
@@ -60,6 +116,7 @@ export function RepoReady() {
       setIssueNumber(next.issues[0]?.number ?? 0);
       setPlan("");
       setAsked(false);
+      setGrounded(null);
       setOpenFile(Object.keys(next.files)[0] ?? null);
       setTab("overview");
     } catch (cause) {
@@ -87,6 +144,13 @@ export function RepoReady() {
             <p className="font-mono text-xs tracking-widest text-signal uppercase">Open-source onboarding</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-tight">RepoReady</h1>
             <p className="mt-1 max-w-xl text-stone">From an unfamiliar repository to a first contribution.</p>
+            <p className="mt-2 text-sm text-stone">
+              {health
+                ? health.available
+                  ? `Model ${health.model} is connected.`
+                  : `Model offline. ${health.detail}`
+                : "Checking the local model…"}
+            </p>
           </div>
           <div className="flex rounded-card border border-line bg-ink p-1" role="group" aria-label="Data source">
             <ModeButton active={mode === "sample"} onClick={() => setMode("sample")}>
@@ -139,7 +203,7 @@ export function RepoReady() {
           <p className="mt-3 text-sm text-stone">
             {snapshot.simulated
               ? "That URL will be read from GitHub when you analyze it. Commands are never executed."
-              : "Indexed from the public repository you pasted. Commands are never executed. Answers stay as cited evidence."}
+              : "Indexed from the public repository you pasted. Commands are never executed."}
           </p>
         )}
         {error ? (
@@ -186,10 +250,13 @@ export function RepoReady() {
             <Ask
               question={question}
               onQuestion={setQuestion}
-              onAsk={() => setAsked(true)}
-              answer={answer?.answer ?? ""}
-              evidence={answer?.chunks ?? []}
+              onAsk={() => void ask()}
+              answer={grounded?.answer ?? ""}
+              evidence={grounded?.chunks ?? []}
               asked={asked}
+              asking={asking}
+              origin={grounded?.origin ?? null}
+              warning={grounded?.warning}
               simulated={snapshot.simulated}
             />
           ) : null}
@@ -200,8 +267,9 @@ export function RepoReady() {
               issueNumber={issueNumber}
               onIssue={setIssueNumber}
               plan={plan}
-              onPlan={() => setPlan(contributionPlan(snapshot, issueNumber))}
-              onDownload={() => download("contribution-plan.md", plan || contributionPlan(snapshot, issueNumber))}
+              onPlan={() => void buildPlan()}
+              planning={planning}
+              onDownload={() => download("contribution-plan.md", plan || evidencePlan(snapshot, issueNumber).markdown)}
             />
           ) : null}
           {tab === "gaps" ? (
@@ -311,6 +379,9 @@ function Ask({
   answer,
   evidence,
   asked,
+  asking,
+  origin,
+  warning,
   simulated,
 }: {
   question: string;
@@ -319,15 +390,24 @@ function Ask({
   answer: string;
   evidence: Chunk[];
   asked: boolean;
+  asking: boolean;
+  origin: GroundedAnswer["origin"] | null;
+  warning?: string;
   simulated: boolean;
 }) {
+  const label =
+    origin === "model"
+      ? "Model answer. Citations were checked against the index."
+      : origin === "insufficient"
+        ? "Insufficient evidence. The model was not asked to guess."
+        : origin === "model-unavailable"
+          ? "Not a model answer."
+          : simulated
+            ? "The sample is fictional. A connected model can answer from these files."
+            : "A connected model answers only from the indexed files.";
   return (
     <div className="rounded-card border border-line bg-panel p-4">
-      <p className="text-sm text-stone">
-        {simulated
-          ? "Answers use only the fictional sample files. This is not a model."
-          : "Answers use only the files that were indexed. This is not a model."}
-      </p>
+      <p className="text-sm text-stone">{label}</p>
       <form
         className="mt-3 flex flex-col gap-3 sm:flex-row"
         onSubmit={(event) => {
@@ -344,15 +424,22 @@ function Ask({
           onChange={(event) => onQuestion(event.target.value)}
           className="min-h-11 flex-1 rounded-card border border-line bg-ink px-4 outline-none focus:border-signal"
         />
-        <button type="submit" className="min-h-11 rounded-card bg-signal px-5 font-medium text-signal-ink">
-          Ask
+        <button
+          type="submit"
+          disabled={asking}
+          className="min-h-11 rounded-card bg-signal px-5 font-medium text-signal-ink disabled:opacity-60"
+        >
+          {asking ? "Asking…" : "Ask"}
         </button>
       </form>
       {!asked ? <p className="mt-4 text-sm text-stone">Ask about install steps, tests, or a file.</p> : null}
-      {asked ? (
+      {asked && answer ? (
         <div className="mt-4 rounded-lg border border-line bg-ink p-4" role="status">
-          <p className="text-xs tracking-wide text-stone uppercase">Answer</p>
+          <p className="text-xs tracking-wide text-stone uppercase">
+            {origin === "model" ? "Model answer" : "Evidence"}
+          </p>
           <p className="mt-2 text-sm leading-6 whitespace-pre-wrap">{answer}</p>
+          {warning ? <p className="mt-3 text-sm text-signal">{warning}</p> : null}
         </div>
       ) : null}
       <ul className="mt-4 space-y-3">
@@ -369,7 +456,7 @@ function Ask({
   );
 }
 
-function Setup({ commands }: { commands: ReturnType<typeof setupCommands> }) {
+function Setup({ commands }: { commands: ReturnType<typeof analyzeSetup> }) {
   if (commands.length === 0) {
     return (
       <p className="rounded-card border border-line bg-panel p-4 text-sm text-stone">
@@ -386,7 +473,7 @@ function Setup({ commands }: { commands: ReturnType<typeof setupCommands> }) {
             {command.status} · {command.source}
             {command.prerequisites.length ? ` · Needs ${command.prerequisites.join(", ")}` : ""}
           </p>
-          <p className="mt-1 text-xs text-stone">Not executed. Presence in a file is not a test result.</p>
+          {command.note ? <p className="mt-1 text-xs text-stone">{command.note}</p> : null}
         </li>
       ))}
     </ul>
@@ -399,6 +486,7 @@ function Contribute({
   onIssue,
   plan,
   onPlan,
+  planning,
   onDownload,
 }: {
   snapshot: RepoSnapshot;
@@ -406,6 +494,7 @@ function Contribute({
   onIssue: (value: number) => void;
   plan: string;
   onPlan: () => void;
+  planning: boolean;
   onDownload: () => void;
 }) {
   const issue = snapshot.issues.find((item) => item.number === issueNumber);
@@ -437,8 +526,13 @@ function Contribute({
         </div>
       ) : null}
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <button type="button" onClick={onPlan} className="min-h-11 rounded-card bg-signal px-5 font-medium text-signal-ink">
-          Build plan from evidence
+        <button
+          type="button"
+          onClick={onPlan}
+          disabled={planning}
+          className="min-h-11 rounded-card bg-signal px-5 font-medium text-signal-ink disabled:opacity-60"
+        >
+          {planning ? "Writing plan…" : "Build plan from evidence"}
         </button>
         <button
           type="button"
