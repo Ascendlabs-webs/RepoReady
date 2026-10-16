@@ -1,17 +1,18 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #101114;
-  --color-panel: #181a20;
-  --color-raised: #22252d;
-  --color-line: #343842;
-  --color-paper: #f4f1ec;
-  --color-stone: #9a9388;
-  --color-signal: #ff4d00;
-  --color-signal-ink: #2a1208;
+  --color-ink: #101418;
+  --color-panel: #182028;
+  --color-raised: #222b34;
+  --color-line: #33414c;
+  --color-paper: #f4f7f8;
+  --color-stone: #93a3ae;
+  --color-signal: #7eb8d4;
+  --color-signal-ink: #0c161c;
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --radius-card: 0.75rem;
+  --shadow-ring: 0 0 0 1px rgb(244 247 248 / 0.08);
 }
 
 @layer base {
@@ -21,11 +22,20 @@
     color: var(--color-paper);
     font-family: var(--font-sans);
     line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
 
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
+  }
+
+  button,
+  [role="tab"] {
+    transition:
+      background-color 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease;
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -6,15 +6,6 @@ RepoReady is an evidence-grounded onboarding app for public GitHub repositories.
 
 If Ollama is not running, the app still shows retrieved evidence and says that the text is not a model answer.
 
-Ollama cannot run inside Vercel. On a Vercel deployment the server calls a hosted model instead. Add these in the Vercel project settings, then redeploy:
-
-```
-XAI_API_KEY=your key from https://console.x.ai
-MODEL_NAME=grok-4.20-0309-non-reasoning
-```
-
-The browser never sees the key. `MODEL_BASE_URL` is optional and defaults to `https://api.x.ai/v1`. Local `npm run dev` still uses Ollama unless you set `MODEL_PROVIDER=hosted` and `XAI_API_KEY`.
-
 ## Requirements
 
 - Node.js 22 or newer
@@ -35,7 +26,9 @@ export OLLAMA_MODEL=qwen3:4b
 npm run dev
 ```
 
-Windows PowerShell:
+Windows: double-click [RepoReady.bat](RepoReady.bat). It installs dependencies, starts Ollama with `qwen3:4b` when that program is available, and opens http://127.0.0.1:8080. Node.js 22 or newer is required. If Node or Ollama is missing, the file tries to install them with winget.
+
+Windows PowerShell, if you prefer to run it yourself:
 
 ```powershell
 npm install
@@ -66,7 +59,7 @@ npm run build
 - [`.grok/app-env.json`](.grok/app-env.json) with `VITE_AUTH_ENABLED` set to `"false"`. Other files under `.grok/` stay gitignored.
 - [`public/__grok/icon-180.png`](public/__grok/icon-180.png) and [`public/__grok/install/styles.css`](public/__grok/install/styles.css), which the install page serves.
 
-`npm run test:host` is separate. It checks that `.grok/skills/og/` still matches the brand and atomic-write scripts. That skill tree belongs to the Grok app-builder workspace and is not in this repository. The command fails on a clean clone, and that failure is expected.
+`npm run test:host` is separate. It checks that `.grok/skills/og/` still matches the brand and atomic-write scripts. That skill tree belongs to the app-builder workspace and is not in this repository. The command fails on a clean clone, and that failure is expected.
 ## What the app will not do
 
 - It does not run repository commands.

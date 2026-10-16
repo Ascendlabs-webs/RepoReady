@@ -15,7 +15,7 @@ export const Route = createRootRoute({
         name: "description",
         content: "From an unfamiliar repository to a first contribution, with evidence from the actual codebase.",
       },
-      { name: "theme-color", content: "#101114" },
+      { name: "theme-color", content: "#101418" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
