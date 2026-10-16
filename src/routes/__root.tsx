@@ -13,7 +13,7 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "From an unfamiliar repository to a first contribution, with evidence from the actual codebase.",
+        content: "Your path to a first open-source contribution. An evidence-backed plan from a repository and a real issue.",
       },
       { name: "theme-color", content: "#101418" },
     ],

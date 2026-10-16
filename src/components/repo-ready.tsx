@@ -37,7 +37,7 @@ export function RepoReady() {
   const [asking, setAsking] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [grounded, setGrounded] = useState<GroundedAnswer | null>(null);
-  const [modelOpen, setModelOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(true);
 
   const commands = useMemo(() => analyzeSetup(snapshot.files), [snapshot]);
   const gaps = useMemo(() => documentationGaps(snapshot), [snapshot]);
@@ -140,8 +140,8 @@ export function RepoReady() {
     URL.revokeObjectURL(href);
   }
 
-  const modelLabel = health ? (health.available ? health.model : "Offline") : "Checking";
   const hosted = health?.provider === "hosted";
+  const modelLabel = !health ? "Checking" : health.available ? health.model : hosted ? "Offline" : "Local";
 
   return (
     <div className="min-h-screen bg-ink pb-24 text-paper">
@@ -182,39 +182,38 @@ export function RepoReady() {
         ) : null}
         {!hosted && modelOpen ? (
           <form
-            className="mx-auto grid max-w-6xl gap-2 px-4 pb-4 sm:grid-cols-[1fr_8rem_auto]"
+            className="mx-auto max-w-6xl px-4 pb-4"
             onSubmit={(event) => {
               event.preventDefault();
               void refreshHealth();
             }}
           >
-            <label className="sr-only" htmlFor="ollama-url">
-              Ollama URL
-            </label>
-            <input
-              id="ollama-url"
-              value={ollamaUrl}
-              onChange={(event) => setOllamaUrl(event.target.value)}
-              placeholder="http://127.0.0.1:11434"
-              spellCheck={false}
-              className="min-h-11 rounded-card border border-line bg-ink px-3 text-sm outline-none placeholder:text-stone focus:border-signal"
-            />
-            <label className="sr-only" htmlFor="ollama-model">
-              Ollama model
-            </label>
-            <input
-              id="ollama-model"
-              value={ollamaModel}
-              onChange={(event) => setOllamaModel(event.target.value)}
-              placeholder="qwen3:4b"
-              spellCheck={false}
-              className="min-h-11 rounded-card border border-line bg-ink px-3 text-sm outline-none placeholder:text-stone focus:border-signal"
-            />
-            <button type="submit" className="min-h-11 rounded-card border border-line px-4 text-sm font-medium">
-              Check model
-            </button>
-            <p className="text-xs text-stone sm:col-span-3">
-              {health?.detail ?? "Checking the local model."} Use the Ollama address on this computer.
+            <p className="mb-2 text-xs tracking-widest text-stone uppercase">Local model</p>
+            <div className="grid gap-2 sm:grid-cols-[1fr_8rem_auto]">
+              <input
+                id="ollama-url"
+                aria-label="Ollama URL"
+                value={ollamaUrl}
+                onChange={(event) => setOllamaUrl(event.target.value)}
+                placeholder="http://127.0.0.1:11434"
+                spellCheck={false}
+                className="min-h-11 rounded-card border border-line bg-ink px-3 text-sm outline-none placeholder:text-stone focus:border-signal"
+              />
+              <input
+                id="ollama-model"
+                aria-label="Ollama model"
+                value={ollamaModel}
+                onChange={(event) => setOllamaModel(event.target.value)}
+                placeholder="qwen3:4b"
+                spellCheck={false}
+                className="min-h-11 rounded-card border border-line bg-ink px-3 text-sm outline-none placeholder:text-stone focus:border-signal"
+              />
+              <button type="submit" className="min-h-11 rounded-card border border-line px-4 text-sm font-medium">
+                Check model
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-stone">
+              {health?.detail ?? "Checking the local model."} This run uses the model on this computer.
             </p>
           </form>
         ) : null}

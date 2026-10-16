@@ -1,8 +1,12 @@
 # RepoReady
 
-From an unfamiliar repository to a first contribution.
+Your path to a first open-source contribution.
 
-RepoReady is an evidence-grounded onboarding app for public GitHub repositories. It indexes a bounded set of documentation, source, tests, manifests, and CI files, then asks a local open-weight model to answer questions and draft a contribution plan. Every model claim is checked against those files. Commands found in a repository are never executed.
+Contributing to open source is difficult when you don't know the codebase, where to start, or how to test your changes.
+
+RepoReady turns a GitHub repository and a real issue into an evidence-backed contribution plan. It identifies relevant files, explains the setup and testing workflow, and helps you understand what to change and why. Powered by an open-weight model, it validates citations against retrieved repository evidence and surfaces uncertainty instead of presenting guesses as facts.
+
+Our goal is to make unfamiliar open-source projects easier to contribute to, especially for developers making their first contribution.
 
 If Ollama is not running, the app still shows retrieved evidence and says that the text is not a model answer.
 
@@ -10,7 +14,7 @@ If Ollama is not running, the app still shows retrieved evidence and says that t
 
 - Node.js 22 or newer
 - A public GitHub repository for live indexing. Unauthenticated requests are rate limited.
--  [Ollama](https://ollama.com) with `qwen3:4b` for model answers
+- Optional: [Ollama](https://ollama.com) with `qwen3:4b` for model answers
 
 ## Install and run
 
