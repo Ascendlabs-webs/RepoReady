@@ -1,6 +1,18 @@
 import type { Chunk, Gap, RepoSnapshot, SetupCommand } from "./types";
 
-const COMMAND = /(?:pip3?|python3?|pytest|npm|yarn|pnpm|make|tox|docker)\s+[^\n]+/gi;
+const STOP = new Set([
+  "a", "an", "the", "how", "do", "does", "did", "i", "to", "and", "or", "of", "this", "that", "it", "is", "are",
+  "what", "where", "when", "why", "can", "for", "my", "me", "in", "on", "with", "be", "from", "about", "please",
+  "you", "your", "we", "should", "not", "into", "using", "use", "file", "files", "repo", "repository",
+]);
+
+function contentTerms(query: string): string[] {
+  return [
+    ...new Set(
+      (query.toLowerCase().match(/\w+/g) ?? []).filter((term) => term.length > 1 && !STOP.has(term)),
+    ),
+  ];
+}
 
 export function parseGithubUrl(raw: string): { owner: string; repo: string } {
   const trimmed = raw.trim().replace(/\/+$/, "").replace(/\.git$/, "");
@@ -24,29 +36,76 @@ export function parseGithubUrl(raw: string): { owner: string; repo: string } {
 }
 
 export function retrieve(files: Record<string, string>, query: string, topK = 6): Chunk[] {
-  const terms = new Set(query.toLowerCase().match(/\w+/g) ?? []);
-  if (terms.size === 0) return [];
+  const terms = contentTerms(query);
+  if (terms.length === 0) return [];
   const chunks: Chunk[] = [];
   for (const [path, content] of Object.entries(files)) {
     const lines = content.split("\n");
-    const pathBoost = [...terms].some((term) => path.toLowerCase().includes(term)) ? 4 : 0;
+    const pathBoost = terms.some((term) => path.toLowerCase().includes(term)) ? 2 : 0;
     for (let i = 0; i < lines.length; i += 12) {
       const slice = lines.slice(i, i + 16);
       const text = slice.join("\n").toLowerCase();
-      const score = pathBoost + [...terms].filter((term) => text.includes(term)).length;
-      if (score > 0) {
-        chunks.push({
-          path,
-          startLine: i + 1,
-          endLine: Math.min(i + slice.length, lines.length),
-          content: slice.join("\n"),
-          score,
-        });
-      }
+      const hits = terms.filter((term) => text.includes(term)).length;
+      if (hits === 0 && pathBoost === 0) continue;
+      chunks.push({
+        path,
+        startLine: i + 1,
+        endLine: Math.min(i + slice.length, lines.length),
+        content: slice.join("\n"),
+        score: pathBoost + hits,
+      });
     }
   }
   return chunks.sort((a, b) => b.score - a.score).slice(0, topK);
 }
+
+export function answerQuestion(files: Record<string, string>, query: string): { answer: string; chunks: Chunk[] } {
+  const terms = contentTerms(query);
+  const chunks = retrieve(files, query, 4);
+  if (terms.length === 0 || chunks.length === 0) {
+    return {
+      answer: "Insufficient evidence in the indexed files. Ask about a file, command, or topic that appears in the repository.",
+      chunks: [],
+    };
+  }
+  const commands = setupCommands(files).filter((item) => commandMatches(item.command, terms));
+  if (commands.length > 0) {
+    const lines = ["From the indexed files:"];
+    for (const item of commands.slice(0, 4)) {
+      lines.push(`- ${item.command} (${item.source}, ${item.status.toLowerCase()}, not executed)`);
+    }
+    return { answer: lines.join("\n"), chunks };
+  }
+  const top = chunks[0];
+  if (!top) {
+    return { answer: "Insufficient evidence in the indexed files.", chunks: [] };
+  }
+  const excerpt = top.content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" ");
+  return {
+    answer: `No command in the index matches this question. Closest passage is ${top.path}:L${top.startLine}-L${top.endLine}: ${excerpt}`,
+    chunks,
+  };
+}
+
+function commandMatches(command: string, terms: string[]): boolean {
+  const lower = command.toLowerCase();
+  return terms.some((term) => {
+    if (lower.includes(term)) return true;
+    if (term.startsWith("test") && /\b(pytest|tox|unittest|npm test|pnpm test)\b/.test(lower)) return true;
+    if (term.startsWith("install") && /\b(install|pip|npm|poetry|uv)\b/.test(lower)) return true;
+    if ((term === "run" || term === "start" || term === "running") && /\b(python|flask|uvicorn|node|npm start)\b/.test(lower)) {
+      return true;
+    }
+    return false;
+  });
+}
+
+const COMMAND = /(?:pip3?|python3?|pytest|npm|yarn|pnpm|make|tox|docker)(?:\s+[^\n]+)?/i;
 
 export function setupCommands(files: Record<string, string>): SetupCommand[] {
   const found: SetupCommand[] = [];

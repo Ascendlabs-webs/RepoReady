@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { FileText, Search, ShieldCheck, GitPullRequest, AlertTriangle, Box } from "lucide-react";
 import { SAMPLE_REPO } from "@/lib/repoready/sample";
-import { contributionPlan, documentationGaps, gapReport, retrieve, setupCommands } from "@/lib/repoready/engine";
+import { answerQuestion, contributionPlan, documentationGaps, gapReport, setupCommands } from "@/lib/repoready/engine";
 import { ingestGithubRepo } from "@/lib/repoready/github.functions";
 import type { Chunk, RepoSnapshot } from "@/lib/repoready/types";
 
@@ -30,8 +30,8 @@ export function RepoReady() {
 
   const commands = useMemo(() => setupCommands(snapshot.files), [snapshot]);
   const gaps = useMemo(() => documentationGaps(snapshot), [snapshot]);
-  const evidence = useMemo(
-    () => (asked ? retrieve(snapshot.files, question) : []),
+  const answer = useMemo(
+    () => (asked ? answerQuestion(snapshot.files, question) : null),
     [asked, snapshot, question],
   );
 
@@ -187,7 +187,8 @@ export function RepoReady() {
               question={question}
               onQuestion={setQuestion}
               onAsk={() => setAsked(true)}
-              evidence={evidence}
+              answer={answer?.answer ?? ""}
+              evidence={answer?.chunks ?? []}
               asked={asked}
               simulated={snapshot.simulated}
             />
@@ -307,6 +308,7 @@ function Ask({
   question,
   onQuestion,
   onAsk,
+  answer,
   evidence,
   asked,
   simulated,
@@ -314,6 +316,7 @@ function Ask({
   question: string;
   onQuestion: (value: string) => void;
   onAsk: () => void;
+  answer: string;
   evidence: Chunk[];
   asked: boolean;
   simulated: boolean;
@@ -322,8 +325,8 @@ function Ask({
     <div className="rounded-card border border-line bg-panel p-4">
       <p className="text-sm text-stone">
         {simulated
-          ? "Sample lookup. Passages come from the fictional files. This is not a model answer."
-          : "Evidence lookup. A local model is not connected, so this does not invent an answer."}
+          ? "Answers use only the fictional sample files. This is not a model."
+          : "Answers use only the files that were indexed. This is not a model."}
       </p>
       <form
         className="mt-3 flex flex-col gap-3 sm:flex-row"
@@ -342,14 +345,15 @@ function Ask({
           className="min-h-11 flex-1 rounded-card border border-line bg-ink px-4 outline-none focus:border-signal"
         />
         <button type="submit" className="min-h-11 rounded-card bg-signal px-5 font-medium text-signal-ink">
-          Find evidence
+          Ask
         </button>
       </form>
       {!asked ? <p className="mt-4 text-sm text-stone">Ask about install steps, tests, or a file.</p> : null}
-      {asked && evidence.length === 0 ? (
-        <p className="mt-4 text-sm" role="status">
-          Insufficient evidence in the indexed files.
-        </p>
+      {asked ? (
+        <div className="mt-4 rounded-lg border border-line bg-ink p-4" role="status">
+          <p className="text-xs tracking-wide text-stone uppercase">Answer</p>
+          <p className="mt-2 text-sm leading-6 whitespace-pre-wrap">{answer}</p>
+        </div>
       ) : null}
       <ul className="mt-4 space-y-3">
         {evidence.map((chunk) => (
