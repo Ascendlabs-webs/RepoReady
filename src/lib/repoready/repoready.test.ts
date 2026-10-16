@@ -370,7 +370,7 @@ test("Vercel uses a hosted model and ignores the browser Ollama URL", async () =
   assert.equal(auth, `Bearer ${secret}`);
   assert.equal(JSON.stringify(health).includes(secret), false);
   const offline = await checkModel(async () => Response.json({}), { deployment: "vercel" });
-  assert.match(offline.detail, /XAI_API_KEY/);
+  assert.match(offline.detail, /not available/);
   assert.equal(await generateText("question", fetchImpl, target), "See [README.md:L1-L1].");
   assert.equal(seen, "https://api.x.ai/v1/chat/completions");
 });
