@@ -14,7 +14,7 @@ flowchart LR
 
 The browser never calls Ollama directly. Server functions in `src/lib/repoready/model.functions.ts` and `src/lib/repoready/github.functions.ts` perform GitHub and model requests.
 
-Indexing (`src/lib/repoready/indexer.ts` and `ingest.ts`) reads the Git tree, drops secrets, binaries, lockfiles, and dependency directories, then fetches at most 24 text files and 96,000 characters.
+Indexing (`src/lib/repoready/indexer.ts` and `ingest.ts`) reads the Git tree, drops secrets, binaries, lockfiles, and dependency directories, then stores at most 24 text files. The stored text never exceeds 96,000 characters: a file that would cross that budget is cut to the remaining prefix, or skipped when no characters remain, and the index is marked incomplete.
 
 Retrieval runs before any model call. If nothing matches, the model is not called. A citation is valid only when its path is in the passages supplied to that call, the line range exists in the source file, and the range sits inside one of those passages without crossing a gap. One retry is allowed. A failed check is shown as a verification warning. Coverage flags are computed from files that were actually stored, after downloads finish. A truncated tree, a skipped candidate, a failed download, or truncated file text marks the index incomplete.
 

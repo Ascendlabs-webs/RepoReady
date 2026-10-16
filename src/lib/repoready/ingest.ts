@@ -31,7 +31,8 @@ export async function ingestRepository(url: string, fetchImpl: typeof fetch = fe
   let characterBudgetHit = false;
   let processed = 0;
   for (const choice of plan.selected) {
-    if (total >= LIMITS.maxTotalChars) {
+    const remaining = LIMITS.maxTotalChars - total;
+    if (remaining <= 0) {
       characterBudgetHit = true;
       skipped += plan.selected.length - processed;
       limitations.push("Stopped indexing because the total context limit was reached.");
@@ -40,13 +41,29 @@ export async function ingestRepository(url: string, fetchImpl: typeof fetch = fe
     processed += 1;
     try {
       const text = await readRaw(fetchImpl, owner, repo, branch, choice.path);
-      const slice = text.slice(0, LIMITS.maxFileChars);
+      const fileCap = Math.min(LIMITS.maxFileChars, remaining);
+      const slice = text.slice(0, fileCap);
       if (slice.length < text.length) {
         contentTruncated = true;
-        limitations.push(`Truncated ${choice.path} to ${LIMITS.maxFileChars} characters.`);
+        if (fileCap < LIMITS.maxFileChars) {
+          characterBudgetHit = true;
+          limitations.push(
+            `Truncated ${choice.path} to ${slice.length} characters to stay within the total context limit.`,
+          );
+        } else {
+          limitations.push(`Truncated ${choice.path} to ${LIMITS.maxFileChars} characters.`);
+        }
       }
       files[choice.path] = slice;
       total += slice.length;
+      if (characterBudgetHit) {
+        const rest = plan.selected.length - processed;
+        if (rest > 0) {
+          skipped += rest;
+          limitations.push("Stopped indexing because the total context limit was reached.");
+        }
+        break;
+      }
     } catch {
       downloadFailed = true;
       skipped += 1;

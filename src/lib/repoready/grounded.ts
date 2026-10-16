@@ -1,6 +1,6 @@
 import { validateCitations } from "./citations.ts";
 import { answerQuestion, retrieve } from "./engine.ts";
-import { checkModel, generateText, OllamaError } from "./ollama.ts";
+import { checkModel, generateText, OllamaError, type OllamaTarget } from "./ollama.ts";
 import type { Chunk, GroundedAnswer } from "./types.ts";
 
 const UNTRUSTED =
@@ -10,6 +10,7 @@ export async function answerWithModel(
   files: Record<string, string>,
   question: string,
   fetchImpl: typeof fetch = fetch,
+  target?: OllamaTarget,
 ): Promise<GroundedAnswer> {
   const draft = answerQuestion(files, question);
   if (draft.chunks.length === 0) {
@@ -19,7 +20,7 @@ export async function answerWithModel(
       chunks: [],
     };
   }
-  const health = await checkModel(fetchImpl);
+  const health = await checkModel(fetchImpl, target);
   if (!health.available) {
     return {
       origin: "model-unavailable",
@@ -30,7 +31,7 @@ export async function answerWithModel(
     };
   }
   try {
-    return await complete(files, question, draft.chunks, fetchImpl, health.model);
+    return await complete(files, question, draft.chunks, fetchImpl, health.model, target);
   } catch (error) {
     const detail = error instanceof OllamaError ? error.message : "The model request failed.";
     return {
@@ -49,13 +50,15 @@ async function complete(
   chunks: Chunk[],
   fetchImpl: typeof fetch,
   model: string,
+  target?: OllamaTarget,
 ): Promise<GroundedAnswer> {
-  let text = await generateText(prompt(question, chunks), fetchImpl);
+  let text = await generateText(prompt(question, chunks), fetchImpl, target);
   let check = validateCitations(text, files, chunks);
   if (!check.valid) {
     text = await generateText(
       `${prompt(question, chunks)}\n\nYour previous answer had invalid citations (${check.invalid.join(", ")}). Cite only these passages: ${spanList(chunks)}.`,
       fetchImpl,
+      target,
     );
     check = validateCitations(text, files, chunks);
   }

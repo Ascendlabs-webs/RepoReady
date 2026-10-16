@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { answerWithModel } from "./grounded.ts";
-import { checkModel } from "./ollama.ts";
+import { checkModel, type OllamaTarget } from "./ollama.ts";
 import { planWithModel } from "./planner.ts";
 import type { RepoSnapshot } from "./types.ts";
 
@@ -26,18 +26,27 @@ function readFiles(input: unknown): Record<string, string> {
   return clean;
 }
 
+function readOllama(input: unknown): OllamaTarget {
+  if (typeof input !== "object" || !input || !("ollama" in input)) return {};
+  const ollama = (input as { ollama?: unknown }).ollama;
+  if (typeof ollama !== "object" || !ollama) return {};
+  const baseUrl = "baseUrl" in ollama ? String((ollama as { baseUrl?: unknown }).baseUrl ?? "").trim() : "";
+  const model = "model" in ollama ? String((ollama as { model?: unknown }).model ?? "").trim() : "";
+  return { baseUrl: baseUrl || undefined, model: model || undefined };
+}
+
 export const modelHealth = createServerFn({ method: "POST" })
-  .validator((input: unknown) => input ?? {})
-  .handler(async () => checkModel());
+  .validator((input: unknown) => readOllama(input))
+  .handler(async ({ data }) => checkModel(fetch, data));
 
 export const askRepository = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
     const question =
       typeof input === "object" && input && "question" in input ? String((input as { question: unknown }).question) : "";
     if (!question.trim() || question.length > 2_000) throw new Error("Enter a shorter question.");
-    return { question: question.trim(), files: readFiles(input) };
+    return { question: question.trim(), files: readFiles(input), ollama: readOllama(input) };
   })
-  .handler(async ({ data }) => answerWithModel(data.files, data.question));
+  .handler(async ({ data }) => answerWithModel(data.files, data.question, fetch, data.ollama));
 
 export const planRepository = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
@@ -50,7 +59,8 @@ export const planRepository = createServerFn({ method: "POST" })
     }
     return {
       issueNumber,
+      ollama: readOllama(input),
       snapshot: { ...snapshot, files: readFiles({ files: snapshot.files }) },
     };
   })
-  .handler(async ({ data }) => planWithModel(data.snapshot, data.issueNumber));
+  .handler(async ({ data }) => planWithModel(data.snapshot, data.issueNumber, fetch, data.ollama));

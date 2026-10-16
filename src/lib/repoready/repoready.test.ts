@@ -5,7 +5,7 @@ import { analyzeSetup, documentationGaps, parseGithubUrl, retrieve } from "./eng
 import { answerWithModel } from "./grounded.ts";
 import { ingestRepository } from "./ingest.ts";
 import { LIMITS, planIndex } from "./indexer.ts";
-import { OllamaError, checkModel, generateText } from "./ollama.ts";
+import { OllamaError, checkModel, generateText, normalizeOllamaBaseUrl } from "./ollama.ts";
 import { evidencePlan, planWithModel } from "./planner.ts";
 import { SAMPLE_REPO } from "./sample.ts";
 import type { RepoSnapshot } from "./types.ts";
@@ -171,6 +171,36 @@ test("coverage is incomplete when file text or the character budget is cut short
   assert.equal(budget.files["src/f8.py"], undefined);
   assert.equal(budget.stats.coverage.complete, false);
   assert.ok(budget.stats.limitations.some((item) => item.includes("total context limit")));
+
+  const head = "L1 keep\n";
+  const eight = Array.from({ length: 8 }, (_, index) => `src/a${index}.py`);
+  const ninth = "src/a8.py";
+  const eightBody = "b".repeat(11_250);
+  const ninthBody = head + "z".repeat(12_000 - head.length);
+  const partial = await ingestRepository(
+    "https://github.com/acme/widget",
+    widgetFetch({
+      tree: [...eight, ninth].map((path) => ({
+        path,
+        type: "blob",
+        size: path === ninth ? ninthBody.length : eightBody.length,
+      })),
+      bodies: {
+        ...Object.fromEntries(eight.map((path) => [path, eightBody])),
+        [ninth]: ninthBody,
+      },
+    }),
+  );
+  const stored = Object.values(partial.files).reduce((sum, text) => sum + text.length, 0);
+  assert.equal(eightBody.length, 11_250);
+  assert.equal(ninthBody.length, 12_000);
+  assert.ok(stored <= LIMITS.maxTotalChars);
+  assert.equal(stored, 96_000);
+  assert.equal(partial.files[ninth]?.length, LIMITS.maxTotalChars - 8 * 11_250);
+  assert.equal(partial.files[ninth]?.split("\n")[0], "L1 keep");
+  assert.equal(partial.files[ninth]?.startsWith(ninthBody.slice(0, partial.files[ninth].length)), true);
+  assert.equal(partial.stats.coverage.complete, false);
+  assert.ok(partial.stats.limitations.some((item) => item.includes("total context limit")));
 });
 
 test("coverage is incomplete when the tree, file count, or a large file is capped", async () => {
@@ -255,12 +285,33 @@ test("validateCitations accepts only passages supplied to the model", () => {
   assert.equal(validateCitations("See [src/app.py:L1-L1].", files, gapped).valid, false);
   assert.equal(validateCitations("See [README.md:L1-L2].", files, gapped).valid, true);
   assert.equal(validateCitations("See [README.md:L4-L4].", files, gapped).valid, true);
+  assert.equal(validateCitations("See [README.md:L5-L5].", files, gapped).valid, false);
   assert.equal(validateCitations("See [README.md:L1-L4].", files, gapped).valid, false);
   const adjacent = [
     { path: "README.md", startLine: 1, endLine: 2 },
     { path: "README.md", startLine: 3, endLine: 4 },
   ];
   assert.equal(validateCitations("See [README.md:L1-L4].", files, adjacent).valid, true);
+});
+
+test("checkModel uses the typed local Ollama URL and refuses a public one", async () => {
+  let seen = "";
+  const fetchImpl: typeof fetch = async (input) => {
+    seen = String(input);
+    return Response.json({ models: [{ name: "qwen3:4b" }] });
+  };
+  assert.equal(normalizeOllamaBaseUrl("http://127.0.0.1:11434/"), "http://127.0.0.1:11434");
+  assert.equal(normalizeOllamaBaseUrl("http://192.168.1.20:11434"), "http://192.168.1.20:11434");
+  assert.throws(() => normalizeOllamaBaseUrl("https://example.com"), /local network/);
+  assert.throws(() => normalizeOllamaBaseUrl("http://169.254.169.254"), /local network/);
+  const health = await checkModel(fetchImpl, { baseUrl: "http://127.0.0.1:11435", model: "qwen3:4b" });
+  assert.equal(health.available, true);
+  assert.equal(seen, "http://127.0.0.1:11435/api/tags");
+  const blocked = await checkModel(async () => {
+    throw new Error("should not fetch");
+  }, { baseUrl: "http://example.com" });
+  assert.equal(blocked.available, false);
+  assert.match(blocked.detail, /local network/);
 });
 
 test("ollama reports unavailable, timeout, and malformed responses", async () => {

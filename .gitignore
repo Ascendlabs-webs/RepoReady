@@ -5,7 +5,8 @@ node_modules/
 !.env.example
 screenshots/
 artifacts/
-.grok/
+.grok/*
+!.grok/app-env.json
 *.log
 dist/
 .DS_Store

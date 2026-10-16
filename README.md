@@ -14,7 +14,9 @@ If Ollama is not running, the app still shows retrieved evidence and says that t
 
 ## Install and run
 
-Linux and macOS:
+The header has an Ollama URL field. The default is `http://127.0.0.1:11434` and the model name `qwen3:4b`. Press **Check model** after you change either one. The address must be this computer or your local network. A public URL is refused.
+
+You can also set it before starting the app:
 
 ```bash
 npm install
@@ -40,11 +42,22 @@ To expose the dev server on your LAN on purpose, use `npm run dev:lan`. That bin
 
 ## Checks
 
+A clean clone can run the self-contained suite. It does not need Ollama, GitHub, or a database.
+
 ```bash
 npm test
 npm run typecheck
+npm run build
 ```
 
+`npm run build` builds the app and then runs `npm run db:migrate`. With no `DATABASE_URL`, that step skips. The local preview uses PGLite and applies the same SQL when the server starts. Set `DATABASE_URL` only if the build should migrate a Postgres database.
+
+`npm test` expects two host files that ship with the repository:
+
+- [`.grok/app-env.json`](.grok/app-env.json) with `VITE_AUTH_ENABLED` set to `"false"`. Other files under `.grok/` stay gitignored.
+- [`public/__grok/icon-180.png`](public/__grok/icon-180.png) and [`public/__grok/install/styles.css`](public/__grok/install/styles.css), which the install page serves.
+
+`npm run test:host` is separate. It checks that `.grok/skills/og/` still matches the brand and atomic-write scripts. That skill tree belongs to the Grok app-builder workspace and is not in this repository. The command fails on a clean clone, and that failure is expected.
 ## What the app will not do
 
 - It does not run repository commands.

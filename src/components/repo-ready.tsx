@@ -30,6 +30,8 @@ export function RepoReady() {
   const [plan, setPlan] = useState("");
   const [openFile, setOpenFile] = useState<string | null>("README.md");
   const [health, setHealth] = useState<ModelHealth | null>(null);
+  const [ollamaUrl, setOllamaUrl] = useState("http://127.0.0.1:11434");
+  const [ollamaModel, setOllamaModel] = useState("qwen3:4b");
   const [asking, setAsking] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [grounded, setGrounded] = useState<GroundedAnswer | null>(null);
@@ -37,33 +39,31 @@ export function RepoReady() {
   const commands = useMemo(() => analyzeSetup(snapshot.files), [snapshot]);
   const gaps = useMemo(() => documentationGaps(snapshot), [snapshot]);
 
+  const ollama = { baseUrl: ollamaUrl.trim(), model: ollamaModel.trim() };
+
   useEffect(() => {
-    let cancelled = false;
-    void modelHealth({ data: {} })
-      .then((next) => {
-        if (!cancelled) setHealth(next);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setHealth({
-            available: false,
-            model: "qwen3:4b",
-            baseUrl: "http://127.0.0.1:11434",
-            detail: "The model health check failed.",
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    void refreshHealth(ollama);
   }, []);
+
+  async function refreshHealth(target = ollama) {
+    try {
+      setHealth(await modelHealth({ data: { ollama: target } }));
+    } catch {
+      setHealth({
+        available: false,
+        model: target.model || "qwen3:4b",
+        baseUrl: target.baseUrl,
+        detail: "The model health check failed.",
+      });
+    }
+  }
 
   async function ask() {
     setAsked(true);
     setAsking(true);
     setGrounded(null);
     try {
-      setGrounded(await askRepository({ data: { question, files: snapshot.files } }));
+      setGrounded(await askRepository({ data: { question, files: snapshot.files, ollama } }));
     } catch (cause) {
       setGrounded({
         origin: "model-unavailable",
@@ -79,7 +79,7 @@ export function RepoReady() {
   async function buildPlan() {
     setPlanning(true);
     try {
-      const result = await planRepository({ data: { snapshot, issueNumber } });
+      const result = await planRepository({ data: { snapshot, issueNumber, ollama } });
       const warning = result.warning ? `\n\n## Verification\n${result.warning}\n` : "";
       setPlan(`${result.markdown}${warning}`);
     } catch (cause) {
@@ -147,9 +147,48 @@ export function RepoReady() {
             <p className="mt-2 text-sm text-stone">
               {health
                 ? health.available
-                  ? `Model ${health.model} is connected.`
+                  ? `Model ${health.model} is connected at ${health.baseUrl}.`
                   : `Model offline. ${health.detail}`
                 : "Checking the local model…"}
+            </p>
+            <form
+              className="mt-3 flex max-w-xl flex-col gap-2 sm:flex-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void refreshHealth();
+              }}
+            >
+              <label className="sr-only" htmlFor="ollama-url">
+                Ollama URL
+              </label>
+              <input
+                id="ollama-url"
+                value={ollamaUrl}
+                onChange={(event) => setOllamaUrl(event.target.value)}
+                placeholder="http://127.0.0.1:11434"
+                spellCheck={false}
+                className="min-h-11 flex-1 rounded-card border border-line bg-ink px-3 text-sm text-paper outline-none placeholder:text-stone focus:border-signal"
+              />
+              <label className="sr-only" htmlFor="ollama-model">
+                Ollama model
+              </label>
+              <input
+                id="ollama-model"
+                value={ollamaModel}
+                onChange={(event) => setOllamaModel(event.target.value)}
+                placeholder="qwen3:4b"
+                spellCheck={false}
+                className="min-h-11 rounded-card border border-line bg-ink px-3 text-sm text-paper outline-none placeholder:text-stone focus:border-signal sm:w-32"
+              />
+              <button
+                type="submit"
+                className="min-h-11 rounded-card border border-line px-4 text-sm font-medium text-paper"
+              >
+                Check model
+              </button>
+            </form>
+            <p className="mt-1 max-w-xl text-xs text-stone">
+              Ollama address for this server. On a deployed site, 127.0.0.1 is that server, not your laptop.
             </p>
           </div>
           <div className="flex rounded-card border border-line bg-ink p-1" role="group" aria-label="Data source">
