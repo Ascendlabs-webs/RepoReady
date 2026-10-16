@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Search, ShieldCheck, GitPullRequest, AlertTriangle, Box } from "lucide-react";
+import { FileText, Search, ShieldCheck, GitPullRequest, AlertTriangle, Box, GitBranch } from "lucide-react";
 import { SAMPLE_REPO } from "@/lib/repoready/sample";
 import { analyzeSetup, documentationGaps, gapReport } from "@/lib/repoready/engine";
 import { ingestGithubRepo } from "@/lib/repoready/github.functions";
@@ -16,6 +16,8 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
+
+const ASK_PROMPTS = ["How do I install this and run the tests?", "Where does the app start?", "How are the tests run?"];
 
 export function RepoReady() {
   const [mode, setMode] = useState<"sample" | "live">("sample");
@@ -35,6 +37,7 @@ export function RepoReady() {
   const [asking, setAsking] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [grounded, setGrounded] = useState<GroundedAnswer | null>(null);
+  const [modelOpen, setModelOpen] = useState(false);
 
   const commands = useMemo(() => analyzeSetup(snapshot.files), [snapshot]);
   const gaps = useMemo(() => documentationGaps(snapshot), [snapshot]);
@@ -137,138 +140,131 @@ export function RepoReady() {
     URL.revokeObjectURL(href);
   }
 
+  const modelLabel = health ? (health.available ? health.model : "Offline") : "Checking";
+  const hosted = health?.provider === "hosted";
+
   return (
-    <div className="min-h-screen bg-ink text-paper">
-      <header className="border-b border-line bg-panel">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="font-mono text-xs tracking-widest text-signal uppercase">Open-source onboarding</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight">RepoReady</h1>
-            <p className="mt-1 max-w-xl text-stone">From an unfamiliar repository to a first contribution.</p>
-            <p className="mt-2 text-sm text-stone">
-              {health
-                ? health.available
-                  ? health.provider === "hosted"
-                    ? `Model ${health.model} is running on this server.`
-                    : `Model ${health.model} is connected at ${health.baseUrl}.`
-                  : `Model offline. ${health.detail}`
-                : "Checking the model…"}
-            </p>
-            {health?.provider === "hosted" ? (
-              <p className="mt-2 max-w-xl text-xs text-stone">
-                This deployment calls the model from Vercel. The API key stays on the server.
-              </p>
-            ) : (
-              <form
-                className="mt-3 flex max-w-xl flex-col gap-2 sm:flex-row"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void refreshHealth();
-                }}
-              >
-                <label className="sr-only" htmlFor="ollama-url">
-                  Ollama URL
-                </label>
-                <input
-                  id="ollama-url"
-                  value={ollamaUrl}
-                  onChange={(event) => setOllamaUrl(event.target.value)}
-                  placeholder="http://127.0.0.1:11434"
-                  spellCheck={false}
-                  className="min-h-11 flex-1 rounded-card border border-line bg-ink px-3 text-sm text-paper outline-none placeholder:text-stone focus:border-signal"
-                />
-                <label className="sr-only" htmlFor="ollama-model">
-                  Ollama model
-                </label>
-                <input
-                  id="ollama-model"
-                  value={ollamaModel}
-                  onChange={(event) => setOllamaModel(event.target.value)}
-                  placeholder="qwen3:4b"
-                  spellCheck={false}
-                  className="min-h-11 rounded-card border border-line bg-ink px-3 text-sm text-paper outline-none placeholder:text-stone focus:border-signal sm:w-32"
-                />
-                <button
-                  type="submit"
-                  className="min-h-11 rounded-card border border-line px-4 text-sm font-medium text-paper"
-                >
-                  Check model
-                </button>
-              </form>
-            )}
-            {health?.provider === "hosted" ? null : (
-              <p className="mt-1 max-w-xl text-xs text-stone">
-                Ollama address for this server. On a deployed site, 127.0.0.1 is that server, not your laptop.
-              </p>
-            )}
+    <div className="min-h-screen bg-ink pb-24 text-paper">
+      <header className="border-b border-line">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-card border border-signal text-signal">
+              <GitBranch className="size-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="font-mono text-xs tracking-widest text-signal uppercase">Evidence first</p>
+              <h1 className="text-xl font-semibold tracking-tight">RepoReady</h1>
+            </div>
           </div>
-          <div className="flex rounded-card border border-line bg-ink p-1" role="group" aria-label="Data source">
-            <ModeButton active={mode === "sample"} onClick={() => setMode("sample")}>
-              Offline sample
-            </ModeButton>
-            <ModeButton active={mode === "live"} onClick={() => setMode("live")}>
-              Live GitHub
-            </ModeButton>
-          </div>
+          {hosted ? (
+            <span className="inline-flex min-h-11 max-w-40 items-center gap-2 rounded-card border border-line bg-panel px-3 text-sm">
+              <Dot on={Boolean(health?.available)} />
+              <span className="truncate">{modelLabel}</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setModelOpen((open) => !open)}
+              aria-expanded={modelOpen}
+              className="inline-flex min-h-11 max-w-40 items-center gap-2 rounded-card border border-line bg-panel px-3 text-sm"
+            >
+              <Dot on={Boolean(health?.available)} />
+              <span className="truncate">{modelLabel}</span>
+            </button>
+          )}
         </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-4 py-6">
-        <form
-          className="flex flex-col gap-3 sm:flex-row"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void analyze();
-          }}
-        >
-          <label className="sr-only" htmlFor="repo-url">
-            GitHub repository URL
-          </label>
-          <input
-            id="repo-url"
-            value={url}
-            onChange={(event) => {
-              const next = event.target.value;
-              setUrl(next);
-              if (/github\.com\//i.test(next)) setMode("live");
-            }}
-            disabled={busy}
-            placeholder="Paste a GitHub URL, for example https://github.com/pallets/flask"
-            className="min-h-11 flex-1 rounded-card border border-line bg-panel px-4 text-paper outline-none placeholder:text-stone focus:border-signal disabled:opacity-70"
-          />
-          <button
-            type="submit"
-            disabled={busy}
-            className="min-h-11 rounded-card bg-signal px-5 font-medium text-signal-ink disabled:opacity-60"
-          >
-            {busy ? "Indexing…" : "Analyze repository"}
-          </button>
-        </form>
-
-        {snapshot.simulated && mode === "sample" ? (
-          <p className="mt-3 rounded-card border border-line bg-raised px-4 py-3 text-sm text-paper">
-            Paste any public GitHub URL above to replace this fictional sample. The files below are not from GitHub.
-          </p>
-        ) : (
-          <p className="mt-3 text-sm text-stone">
-            {snapshot.simulated
-              ? "That URL will be read from GitHub when you analyze it. Commands are never executed."
-              : "Indexed from the public repository you pasted. Commands are never executed."}
-          </p>
-        )}
-        {error ? (
-          <p className="mt-3 rounded-card border border-signal bg-raised px-4 py-3 text-sm text-paper" role="alert">
-            {error}
+        {hosted ? (
+          <p className="mx-auto max-w-6xl px-4 pb-4 text-xs text-stone">
+            {health?.available
+              ? `${health.model} is running on this server.`
+              : health?.detail}
           </p>
         ) : null}
+        {!hosted && modelOpen ? (
+          <form
+            className="mx-auto grid max-w-6xl gap-2 px-4 pb-4 sm:grid-cols-[1fr_8rem_auto]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void refreshHealth();
+            }}
+          >
+            <label className="sr-only" htmlFor="ollama-url">
+              Ollama URL
+            </label>
+            <input
+              id="ollama-url"
+              value={ollamaUrl}
+              onChange={(event) => setOllamaUrl(event.target.value)}
+              placeholder="http://127.0.0.1:11434"
+              spellCheck={false}
+              className="min-h-11 rounded-card border border-line bg-ink px-3 text-sm outline-none placeholder:text-stone focus:border-signal"
+            />
+            <label className="sr-only" htmlFor="ollama-model">
+              Ollama model
+            </label>
+            <input
+              id="ollama-model"
+              value={ollamaModel}
+              onChange={(event) => setOllamaModel(event.target.value)}
+              placeholder="qwen3:4b"
+              spellCheck={false}
+              className="min-h-11 rounded-card border border-line bg-ink px-3 text-sm outline-none placeholder:text-stone focus:border-signal"
+            />
+            <button type="submit" className="min-h-11 rounded-card border border-line px-4 text-sm font-medium">
+              Check model
+            </button>
+            <p className="text-xs text-stone sm:col-span-3">
+              {health?.detail ?? "Checking the local model."} Use the Ollama address on this computer.
+            </p>
+          </form>
+        ) : null}
+      </header>
 
-        <section className="mt-6 grid gap-3 sm:grid-cols-3">
-          <Stat label="Repository" value={snapshot.metadata.fullName} />
-          <Stat label="Language" value={snapshot.metadata.language} />
-          <Stat label="Indexed files" value={String(snapshot.stats.indexed)} />
-        </section>
-
-        <div className="mt-6 flex gap-2 overflow-x-auto pb-1" role="tablist">
+      <div className="sticky top-0 z-20 border-b border-line bg-ink">
+        <div className="mx-auto max-w-6xl px-4 py-3">
+          <form
+            className="flex flex-col gap-2 sm:flex-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void analyze();
+            }}
+          >
+            <label className="sr-only" htmlFor="repo-url">
+              GitHub repository URL
+            </label>
+            <input
+              id="repo-url"
+              value={url}
+              onChange={(event) => {
+                const next = event.target.value;
+                setUrl(next);
+                if (/github\.com\//i.test(next)) setMode("live");
+              }}
+              disabled={busy}
+              placeholder="https://github.com/pallets/flask"
+              className="min-h-11 flex-1 rounded-card border border-line bg-panel px-4 text-sm outline-none placeholder:text-stone focus:border-signal disabled:opacity-70"
+            />
+            <button
+              type="submit"
+              disabled={busy}
+              className="min-h-11 rounded-card bg-signal px-5 text-sm font-medium text-signal-ink disabled:opacity-60"
+            >
+              {busy ? "Indexing…" : "Analyze"}
+            </button>
+          </form>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <div className="flex rounded-card border border-line bg-panel p-1" role="group" aria-label="Data source">
+              <ModeButton active={mode === "sample"} onClick={() => setMode("sample")}>
+                Sample
+              </ModeButton>
+              <ModeButton active={mode === "live"} onClick={() => setMode("live")}>
+                Live GitHub
+              </ModeButton>
+            </div>
+            <p className="hidden text-xs text-stone sm:block">Commands in a repository are never executed.</p>
+          </div>
+        </div>
+        <div className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-2" role="tablist">
           {TABS.map((item) => {
             const Icon = item.icon;
             const selected = tab === item.id;
@@ -279,10 +275,8 @@ export function RepoReady() {
                 aria-selected={selected}
                 onClick={() => setTab(item.id)}
                 className={
-                  "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-card border px-4 text-sm " +
-                  (selected
-                    ? "border-signal bg-signal text-signal-ink"
-                    : "border-line bg-panel text-paper")
+                  "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm " +
+                  (selected ? "bg-raised text-paper" : "text-stone")
                 }
               >
                 <Icon className="size-4" aria-hidden="true" />
@@ -291,11 +285,35 @@ export function RepoReady() {
             );
           })}
         </div>
+      </div>
 
-        <div className="mt-4" role="tabpanel">
-          {tab === "overview" ? (
-            <Overview snapshot={snapshot} openFile={openFile} onOpen={setOpenFile} />
-          ) : null}
+      <main className="mx-auto max-w-6xl px-4 py-5">
+        {snapshot.simulated && mode === "sample" ? (
+          <p className="mb-4 rounded-card border border-line bg-panel px-4 py-3 text-sm">
+            This is a fictional sample. Paste a public GitHub URL to replace it.
+          </p>
+        ) : (
+          <p className="mb-4 text-sm text-stone">
+            {snapshot.simulated
+              ? "That URL is read from GitHub when you analyze it."
+              : `Indexed from ${snapshot.metadata.fullName}. Nothing in the repository was executed.`}
+          </p>
+        )}
+        {error ? (
+          <p className="mb-4 rounded-card border border-signal bg-panel px-4 py-3 text-sm" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <section className="grid grid-cols-2 divide-x divide-y divide-line overflow-hidden rounded-card border border-line bg-panel sm:grid-cols-4 sm:divide-y-0">
+          <Stat label="Repository" value={snapshot.metadata.fullName} />
+          <Stat label="Language" value={snapshot.metadata.language || "Unknown"} />
+          <Stat label="Indexed" value={`${snapshot.stats.indexed} files`} />
+          <Stat label="Coverage" value={snapshot.stats.coverage.complete ? "Complete" : "Partial"} tone={snapshot.stats.coverage.complete ? "paper" : "signal"} />
+        </section>
+
+        <div className="mt-5" role="tabpanel">
+          {tab === "overview" ? <Overview snapshot={snapshot} openFile={openFile} onOpen={setOpenFile} /> : null}
           {tab === "ask" ? (
             <Ask
               question={question}
@@ -322,16 +340,15 @@ export function RepoReady() {
               onDownload={() => download("contribution-plan.md", plan || evidencePlan(snapshot, issueNumber).markdown)}
             />
           ) : null}
-          {tab === "gaps" ? (
-            <Gaps
-              gaps={gaps}
-              onDownload={() => download("doc-gaps.md", gapReport(snapshot))}
-            />
-          ) : null}
+          {tab === "gaps" ? <Gaps gaps={gaps} onDownload={() => download("doc-gaps.md", gapReport(snapshot))} /> : null}
         </div>
       </main>
     </div>
   );
+}
+
+function Dot({ on }: { on: boolean }) {
+  return <span className={"size-2 shrink-0 rounded-full " + (on ? "bg-signal" : "bg-stone")} aria-hidden="true" />;
 }
 
 function ModeButton({
@@ -348,8 +365,7 @@ function ModeButton({
       type="button"
       onClick={onClick}
       className={
-        "min-h-11 rounded-lg px-4 text-sm " +
-        (active ? "bg-signal text-signal-ink" : "text-stone")
+        "min-h-11 rounded-lg px-3 text-sm " + (active ? "bg-raised text-paper" : "text-stone")
       }
       aria-pressed={active}
     >
@@ -358,11 +374,11 @@ function ModeButton({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, tone = "paper" }: { label: string; value: string; tone?: "paper" | "signal" }) {
   return (
-    <div className="rounded-card border border-line bg-panel px-4 py-3">
+    <div className="min-w-0 px-4 py-3">
       <p className="text-xs tracking-wide text-stone uppercase">{label}</p>
-      <p className="mt-1 truncate font-medium">{value}</p>
+      <p className={"mt-1 truncate text-sm font-medium " + (tone === "signal" ? "text-signal" : "text-paper")}>{value}</p>
     </div>
   );
 }
@@ -377,11 +393,27 @@ function Overview({
   onOpen: (path: string) => void;
 }) {
   const files = Object.keys(snapshot.files);
+  const coverage = snapshot.stats.coverage;
   return (
-    <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
-      <div className="rounded-card border border-line bg-panel p-3">
-        <p className="px-2 pb-2 text-xs tracking-wide text-stone uppercase">Indexed files</p>
-        <ul className="space-y-1">
+    <div className="grid gap-3 lg:grid-cols-[16rem_1fr]">
+      <div className="flex gap-2 overflow-x-auto lg:hidden">
+        {files.map((path) => (
+          <button
+            key={path}
+            type="button"
+            onClick={() => onOpen(path)}
+            className={
+              "inline-flex min-h-11 max-w-56 shrink-0 items-center rounded-full border px-3 " +
+              (openFile === path ? "border-signal bg-raised text-paper" : "border-line text-stone")
+            }
+          >
+            <FileLabel path={path} />
+          </button>
+        ))}
+      </div>
+      <div className="hidden max-h-[36rem] overflow-y-auto rounded-card border border-line bg-panel p-2 lg:block">
+        <p className="px-2 py-2 text-xs tracking-wide text-stone uppercase">Indexed files</p>
+        <ul>
           {files.map((path) => (
             <li key={path}>
               <button
@@ -393,32 +425,79 @@ function Overview({
                 }
               >
                 <FileText className="size-4 shrink-0" aria-hidden="true" />
-                <span className="truncate font-mono">{path}</span>
+                <FileLabel path={path} />
               </button>
             </li>
           ))}
         </ul>
       </div>
-      <div className="rounded-card border border-line bg-panel p-4">
-        <p className="text-sm text-stone">{snapshot.metadata.description}</p>
-        <p className="mt-2 font-mono text-xs text-stone">
+      <div className="min-w-0 rounded-card border border-line bg-panel p-4">
+        <p className="text-sm leading-6">{snapshot.metadata.description}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Chip on={coverage.readme}>README</Chip>
+          <Chip on={coverage.contributing}>Contributing</Chip>
+          <Chip on={coverage.tests}>Tests</Chip>
+          <Chip on={Boolean(snapshot.metadata.license)}>{snapshot.metadata.license || "No license"}</Chip>
+        </div>
+        <p className="mt-3 font-mono text-xs text-stone">
           {snapshot.stats.examined} examined · {snapshot.stats.indexed} indexed · {snapshot.stats.skipped} skipped
-          {snapshot.metadata.license ? ` · ${snapshot.metadata.license}` : ""}
         </p>
-        <ul className="mt-3 space-y-1 text-sm text-stone">
-          {snapshot.stats.limitations.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
+        {snapshot.stats.limitations.length ? (
+          <ul className="mt-3 space-y-1 text-sm text-stone">
+            {snapshot.stats.limitations.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        ) : null}
         {openFile && snapshot.files[openFile] ? (
-          <pre className="mt-4 overflow-x-auto rounded-lg bg-ink p-4 font-mono text-xs leading-6 text-paper">
-            {numbered(snapshot.files[openFile])}
-          </pre>
+          <CodeBlock path={openFile} content={snapshot.files[openFile]} />
         ) : (
           <p className="mt-4 text-sm text-stone">No file is selected.</p>
         )}
       </div>
     </div>
+  );
+}
+
+function FileLabel({ path }: { path: string }) {
+  const slash = path.lastIndexOf("/");
+  if (slash < 0) return <span className="truncate font-mono text-xs">{path}</span>;
+  return (
+    <span className="truncate font-mono text-xs">
+      <span className="text-stone">{path.slice(0, slash + 1)}</span>
+      {path.slice(slash + 1)}
+    </span>
+  );
+}
+
+function CodeBlock({ path, content }: { path: string; content: string }) {
+  const lines = content.split("\n").slice(0, 80);
+  return (
+    <div className="mt-4 overflow-hidden rounded-lg bg-ink">
+      <p className="border-b border-line px-4 py-2 font-mono text-xs text-stone">{path}</p>
+      <div className="max-h-96 overflow-auto">
+        <ol>
+          {lines.map((line, index) => (
+            <li key={`${path}-${index}`} className="flex font-mono text-xs leading-6">
+              <span className="w-10 shrink-0 border-r border-line pr-2 text-right text-stone select-none">{index + 1}</span>
+              <span className="px-3 whitespace-pre">{line || " "}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </div>
+  );
+}
+function Chip({ on, children }: { on: boolean; children: string }) {
+  return (
+    <span
+      className={
+        "inline-flex min-h-8 items-center rounded-full border px-3 text-xs " +
+        (on ? "border-signal text-signal" : "border-line text-stone")
+      }
+    >
+      {children}
+    </span>
   );
 }
 
@@ -457,9 +536,24 @@ function Ask({
             : "A connected model answers only from the indexed files.";
   return (
     <div className="rounded-card border border-line bg-panel p-4">
-      <p className="text-sm text-stone">{label}</p>
+      <p className="text-sm leading-6 text-stone">{label}</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {ASK_PROMPTS.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            onClick={() => onQuestion(prompt)}
+            className={
+              "min-h-11 rounded-full border px-3 text-left text-xs " +
+              (question === prompt ? "border-signal text-paper" : "border-line text-stone")
+            }
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
       <form
-        className="mt-3 flex flex-col gap-3 sm:flex-row"
+        className="mt-3 flex flex-col gap-2 sm:flex-row"
         onSubmit={(event) => {
           event.preventDefault();
           onAsk();
@@ -472,37 +566,54 @@ function Ask({
           id="question"
           value={question}
           onChange={(event) => onQuestion(event.target.value)}
-          className="min-h-11 flex-1 rounded-card border border-line bg-ink px-4 outline-none focus:border-signal"
+          className="min-h-11 flex-1 rounded-card border border-line bg-ink px-4 text-sm outline-none focus:border-signal"
         />
         <button
           type="submit"
           disabled={asking}
-          className="min-h-11 rounded-card bg-signal px-5 font-medium text-signal-ink disabled:opacity-60"
+          className="min-h-11 rounded-card bg-signal px-5 text-sm font-medium text-signal-ink disabled:opacity-60"
         >
           {asking ? "Asking…" : "Ask"}
         </button>
       </form>
       {!asked ? <p className="mt-4 text-sm text-stone">Ask about install steps, tests, or a file.</p> : null}
       {asked && answer ? (
-        <div className="mt-4 rounded-lg border border-line bg-ink p-4" role="status">
-          <p className="text-xs tracking-wide text-stone uppercase">
-            {origin === "model" ? "Model answer" : "Evidence"}
-          </p>
-          <p className="mt-2 text-sm leading-6 whitespace-pre-wrap">{answer}</p>
+        <div className="mt-4 rounded-lg bg-ink p-4" role="status">
+          <p className="text-xs tracking-wide text-stone uppercase">{origin === "model" ? "Model answer" : "Evidence"}</p>
+          <CitedText text={answer} />
           {warning ? <p className="mt-3 text-sm text-signal">{warning}</p> : null}
         </div>
       ) : null}
-      <ul className="mt-4 space-y-3">
-        {evidence.map((chunk) => (
-          <li key={`${chunk.path}-${chunk.startLine}`} className="rounded-lg border border-line bg-ink p-3">
-            <p className="font-mono text-xs text-signal">
-              [{chunk.path}:L{chunk.startLine}-L{chunk.endLine}]
-            </p>
-            <pre className="mt-2 overflow-x-auto font-mono text-xs leading-6 whitespace-pre-wrap">{chunk.content}</pre>
-          </li>
-        ))}
-      </ul>
+      {evidence.length ? (
+        <ul className="mt-4 space-y-3">
+          {evidence.map((chunk) => (
+            <li key={`${chunk.path}-${chunk.startLine}`} className="rounded-lg bg-ink p-3">
+              <p className="font-mono text-xs text-signal">
+                [{chunk.path}:L{chunk.startLine}-L{chunk.endLine}]
+              </p>
+              <pre className="mt-2 overflow-x-auto font-mono text-xs leading-6 whitespace-pre-wrap">{chunk.content}</pre>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
+  );
+}
+
+function CitedText({ text }: { text: string }) {
+  const parts = text.split(/(\[[^\]]+:L\d+-L\d+\])/g);
+  return (
+    <p className="mt-2 text-sm leading-6 whitespace-pre-wrap">
+      {parts.map((part, index) =>
+        part.startsWith("[") ? (
+          <span key={index} className="font-mono text-signal">
+            {part}
+          </span>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      )}
+    </p>
   );
 }
 
@@ -518,9 +629,21 @@ function Setup({ commands }: { commands: ReturnType<typeof analyzeSetup> }) {
     <ul className="space-y-3">
       {commands.map((command) => (
         <li key={command.source + command.command} className="rounded-card border border-line bg-panel p-4">
-          <p className="font-mono text-sm">{command.command}</p>
-          <p className="mt-2 text-sm text-stone">
-            {command.status} · {command.source}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-mono text-sm">{command.command}</p>
+            <span
+              className={
+                "inline-flex min-h-8 items-center rounded-full border px-3 text-xs " +
+                (command.status === "Not Verified" || command.status === "Conflicting"
+                  ? "border-signal text-signal"
+                  : "border-line text-stone")
+              }
+            >
+              {command.status}
+            </span>
+          </div>
+          <p className="mt-3 text-sm text-stone">
+            {command.source}
             {command.prerequisites.length ? ` · Needs ${command.prerequisites.join(", ")}` : ""}
           </p>
           {command.note ? <p className="mt-1 text-xs text-stone">{command.note}</p> : null}
@@ -571,7 +694,7 @@ function Contribute({
       {issue ? (
         <div className="mt-4">
           <p className="font-medium">{issue.title}</p>
-          <p className="mt-2 text-sm text-stone">{issue.body}</p>
+          <p className="mt-2 text-sm leading-6 text-stone">{issue.body}</p>
           {issue.labels.length ? <p className="mt-2 font-mono text-xs text-signal">{issue.labels.join(" · ")}</p> : null}
         </div>
       ) : null}
@@ -593,7 +716,7 @@ function Contribute({
         </button>
       </div>
       {plan ? (
-        <pre className="mt-4 overflow-x-auto rounded-lg bg-ink p-4 font-mono text-xs leading-6 whitespace-pre-wrap">
+        <pre className="mt-4 overflow-x-auto rounded-lg bg-ink p-4 text-sm leading-6 whitespace-pre-wrap">
           {plan}
         </pre>
       ) : null}
@@ -616,7 +739,12 @@ function Gaps({
         </p>
       ) : (
         gaps.map((gap) => (
-          <article key={gap.category} className="rounded-card border border-line bg-panel p-4">
+          <article
+            key={gap.category}
+            className={
+              "rounded-card border bg-panel p-4 " + (gap.severity === "high" ? "border-signal" : "border-line")
+            }
+          >
             <p className="text-xs tracking-wide text-signal uppercase">{gap.severity}</p>
             <h2 className="mt-1 font-medium">{gap.category}</h2>
             <p className="mt-2 text-sm">{gap.description}</p>
@@ -629,12 +757,4 @@ function Gaps({
       </button>
     </div>
   );
-}
-
-function numbered(content: string): string {
-  return content
-    .split("\n")
-    .slice(0, 80)
-    .map((line, index) => `${String(index + 1).padStart(3, " ")}  ${line}`)
-    .join("\n");
 }
