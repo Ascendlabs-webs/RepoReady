@@ -4,7 +4,7 @@ import { validateCitations } from "./citations.ts";
 import { analyzeSetup, documentationGaps, parseGithubUrl, retrieve } from "./engine.ts";
 import { answerWithModel } from "./grounded.ts";
 import { ingestRepository } from "./ingest.ts";
-import { planIndex } from "./indexer.ts";
+import { LIMITS, planIndex } from "./indexer.ts";
 import { OllamaError, checkModel, generateText } from "./ollama.ts";
 import { evidencePlan, planWithModel } from "./planner.ts";
 import { SAMPLE_REPO } from "./sample.ts";
@@ -35,8 +35,9 @@ test("planIndex keeps nested source and drops secrets, binaries, and dependencie
   assert.ok(paths.includes("tests/test_app.py"));
   assert.ok(paths.includes(".github/workflows/ci.yml"));
   assert.equal(paths.some((path) => path.includes("node_modules") || path.endsWith(".png") || path === ".env"), false);
-  assert.equal(plan.coverage.tests, true);
-  assert.equal(plan.coverage.readme, true);
+  assert.equal(plan.coverage.readme, false);
+  assert.equal(plan.coverage.tests, false);
+  assert.equal(plan.coverage.complete, true);
 });
 
 test("ingestRepository reads nested files and reports a rate limit", async () => {
@@ -74,6 +75,8 @@ test("ingestRepository reads nested files and reports a rate limit", async () =>
   assert.equal(snapshot.files["pkg/main.py"], "print('ok')\n");
   assert.equal(snapshot.files["secret.env"], undefined);
   assert.equal(snapshot.stats.coverage.complete, true);
+  assert.equal(snapshot.stats.coverage.readme, true);
+  assert.equal(snapshot.stats.coverage.tests, false);
 
   const limited: typeof fetch = async (input) => {
     const url = String(input);
@@ -81,6 +84,142 @@ test("ingestRepository reads nested files and reports a rate limit", async () =>
     return new Response("no", { status: 500 });
   };
   await assert.rejects(() => ingestRepository("https://github.com/acme/widget", limited), /rate limit/);
+});
+
+function widgetFetch(options: {
+  tree: Array<{ path: string; type: string; size?: number }>;
+  truncated?: boolean;
+  bodies?: Record<string, string>;
+  fail?: string[];
+}): typeof fetch {
+  const failed = new Set(options.fail ?? []);
+  return async (input) => {
+    const url = String(input);
+    if (url.endsWith("/repos/acme/widget")) {
+      return Response.json({
+        name: "widget",
+        full_name: "acme/widget",
+        description: "demo",
+        default_branch: "main",
+        language: "Python",
+        stargazers_count: 1,
+        html_url: "https://github.com/acme/widget",
+        license: { spdx_id: "MIT" },
+      });
+    }
+    if (url.includes("/git/trees/")) {
+      return Response.json({ truncated: Boolean(options.truncated), tree: options.tree });
+    }
+    if (url.includes("/issues?")) return Response.json([]);
+    const marker = "/acme/widget/main/";
+    const at = url.indexOf(marker);
+    if (at !== -1) {
+      const path = decodeURIComponent(url.slice(at + marker.length));
+      if (failed.has(path)) return new Response("missing", { status: 404 });
+      const body = options.bodies?.[path];
+      if (body != null) return new Response(body);
+    }
+    return new Response("no", { status: 404 });
+  };
+}
+
+test("coverage stays incomplete when a tree README never lands in the snapshot", async () => {
+  const snapshot = await ingestRepository(
+    "https://github.com/acme/widget",
+    widgetFetch({
+      tree: [
+        { path: "README.md", type: "blob", size: 40 },
+        { path: "src/app.py", type: "blob", size: 20 },
+      ],
+      bodies: { "src/app.py": "print('ok')\n" },
+      fail: ["README.md"],
+    }),
+  );
+  assert.equal(snapshot.files["README.md"], undefined);
+  assert.equal(snapshot.files["src/app.py"], "print('ok')\n");
+  assert.equal(snapshot.stats.coverage.readme, false);
+  assert.equal(snapshot.stats.coverage.complete, false);
+  assert.ok(snapshot.stats.limitations.some((item) => item.includes("Could not read README.md")));
+  const gaps = documentationGaps(snapshot);
+  assert.equal(gaps.some((gap) => gap.category === "Missing documented setup"), false);
+  assert.ok(gaps.some((gap) => gap.category === "README not indexed"));
+});
+
+test("coverage is incomplete when file text or the character budget is cut short", async () => {
+  const truncated = await ingestRepository(
+    "https://github.com/acme/widget",
+    widgetFetch({
+      tree: [{ path: "README.md", type: "blob", size: 40 }],
+      bodies: { "README.md": "a".repeat(LIMITS.maxFileChars + 25) },
+    }),
+  );
+  assert.equal(truncated.files["README.md"]?.length, LIMITS.maxFileChars);
+  assert.equal(truncated.stats.coverage.readme, true);
+  assert.equal(truncated.stats.coverage.complete, false);
+  assert.ok(truncated.stats.limitations.some((item) => item.startsWith("Truncated README.md")));
+
+  const names = Array.from({ length: 9 }, (_, index) => `src/f${index}.py`);
+  const body = "y".repeat(LIMITS.maxFileChars);
+  const budget = await ingestRepository(
+    "https://github.com/acme/widget",
+    widgetFetch({
+      tree: names.map((path) => ({ path, type: "blob", size: body.length })),
+      bodies: Object.fromEntries(names.map((path) => [path, body])),
+    }),
+  );
+  assert.equal(budget.stats.indexed, 8);
+  assert.equal(budget.files["src/f8.py"], undefined);
+  assert.equal(budget.stats.coverage.complete, false);
+  assert.ok(budget.stats.limitations.some((item) => item.includes("total context limit")));
+});
+
+test("coverage is incomplete when the tree, file count, or a large file is capped", async () => {
+  const names = Array.from({ length: 25 }, (_, index) => `src/f${String(index).padStart(2, "0")}.py`);
+  const capped = await ingestRepository(
+    "https://github.com/acme/widget",
+    widgetFetch({
+      tree: [
+        { path: "README.md", type: "blob", size: 12 },
+        ...names.map((path) => ({ path, type: "blob" as const, size: 12 })),
+      ],
+      bodies: {
+        "README.md": "# Widget\n",
+        ...Object.fromEntries(names.map((path) => [path, "x\n"])),
+      },
+    }),
+  );
+  assert.equal(capped.stats.indexed, LIMITS.maxFiles);
+  assert.equal(capped.stats.coverage.complete, false);
+  assert.equal(capped.stats.coverage.readme, true);
+  assert.ok(capped.stats.limitations.some((item) => item.includes(`Indexed ${LIMITS.maxFiles} of`)));
+
+  const partialTree = await ingestRepository(
+    "https://github.com/acme/widget",
+    widgetFetch({
+      truncated: true,
+      tree: [{ path: "README.md", type: "blob", size: 12 }],
+      bodies: { "README.md": "# Widget\n" },
+    }),
+  );
+  assert.equal(partialTree.files["README.md"], "# Widget\n");
+  assert.equal(partialTree.stats.coverage.readme, true);
+  assert.equal(partialTree.stats.coverage.truncated, true);
+  assert.equal(partialTree.stats.coverage.complete, false);
+
+  const oversized = await ingestRepository(
+    "https://github.com/acme/widget",
+    widgetFetch({
+      tree: [
+        { path: "README.md", type: "blob", size: LIMITS.maxFileBytes + 1 },
+        { path: "src/app.py", type: "blob", size: 20 },
+      ],
+      bodies: { "src/app.py": "print('ok')\n", "README.md": "# should not be fetched\n" },
+    }),
+  );
+  assert.equal(oversized.files["README.md"], undefined);
+  assert.equal(oversized.files["src/app.py"], "print('ok')\n");
+  assert.equal(oversized.stats.coverage.readme, false);
+  assert.equal(oversized.stats.coverage.complete, false);
 });
 
 test("retrieve keeps line numbers and prefers the matching passage", () => {
@@ -97,10 +236,31 @@ test("retrieve keeps line numbers and prefers the matching passage", () => {
 
 test("validateCitations rejects unknown paths and bad ranges", () => {
   const files = { "README.md": "one\ntwo\nthree\n" };
-  assert.equal(validateCitations("See [README.md:L1-L2].", files).valid, true);
-  assert.equal(validateCitations("See [README.md:L1-L9].", files).valid, false);
-  assert.equal(validateCitations("See [missing.ts:L1-L1].", files).valid, false);
-  assert.equal(validateCitations("No cite.", files).invalid[0], "no citations");
+  const evidence = [{ path: "README.md", startLine: 1, endLine: 3 }];
+  assert.equal(validateCitations("See [README.md:L1-L2].", files, evidence).valid, true);
+  assert.equal(validateCitations("See [README.md:L1-L9].", files, evidence).valid, false);
+  assert.equal(validateCitations("See [missing.ts:L1-L1].", files, evidence).valid, false);
+  assert.equal(validateCitations("No cite.", files, evidence).invalid[0], "no citations");
+});
+
+test("validateCitations accepts only passages supplied to the model", () => {
+  const files = {
+    "README.md": "one\ntwo\nthree\nfour\nfive\n",
+    "src/app.py": "print('indexed but not retrieved')\n",
+  };
+  const gapped = [
+    { path: "README.md", startLine: 1, endLine: 2 },
+    { path: "README.md", startLine: 4, endLine: 4 },
+  ];
+  assert.equal(validateCitations("See [src/app.py:L1-L1].", files, gapped).valid, false);
+  assert.equal(validateCitations("See [README.md:L1-L2].", files, gapped).valid, true);
+  assert.equal(validateCitations("See [README.md:L4-L4].", files, gapped).valid, true);
+  assert.equal(validateCitations("See [README.md:L1-L4].", files, gapped).valid, false);
+  const adjacent = [
+    { path: "README.md", startLine: 1, endLine: 2 },
+    { path: "README.md", startLine: 3, endLine: 4 },
+  ];
+  assert.equal(validateCitations("See [README.md:L1-L4].", files, adjacent).valid, true);
 });
 
 test("ollama reports unavailable, timeout, and malformed responses", async () => {
@@ -166,6 +326,24 @@ test("answerWithModel retries one invalid citation", async () => {
   assert.equal(answer.origin, "model");
   assert.equal(answer.warning, undefined);
   assert.match(answer.answer, /\[README.md:L4-L4\]/);
+});
+
+test("answerWithModel rejects a citation to an indexed file that was not supplied", async () => {
+  const files = {
+    "README.md": "# App\n\n## Installation\npip install -r requirements.txt\n",
+    "src/unused.py": "print('not retrieved')\n",
+  };
+  let posts = 0;
+  const fetchImpl: typeof fetch = async (input) => {
+    if (String(input).endsWith("/api/tags")) return Response.json({ models: [{ name: "qwen3:4b" }] });
+    posts += 1;
+    return Response.json({ response: "See [src/unused.py:L1-L1]." });
+  };
+  const answer = await answerWithModel(files, "How do I install this?", fetchImpl);
+  assert.equal(posts, 2);
+  assert.equal(answer.origin, "model");
+  assert.match(answer.warning ?? "", /Verification warning/);
+  assert.match(answer.warning ?? "", /src\/unused\.py/);
 });
 
 test("setup commands are classified and never marked executed", () => {

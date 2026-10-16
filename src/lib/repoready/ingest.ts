@@ -1,5 +1,5 @@
 import { parseGithubUrl } from "./engine.ts";
-import { LIMITS, planIndex, type TreeEntry } from "./indexer.ts";
+import { LIMITS, coverageFromIndexed, planIndex, type TreeEntry } from "./indexer.ts";
 import type { IssueItem, RepoSnapshot } from "./types.ts";
 
 type GithubRepo = {
@@ -26,23 +26,34 @@ export async function ingestRepository(url: string, fetchImpl: typeof fetch = fe
   const limitations = [...plan.limitations];
   let total = 0;
   let skipped = plan.skipped;
+  let downloadFailed = false;
+  let contentTruncated = false;
+  let characterBudgetHit = false;
+  let processed = 0;
   for (const choice of plan.selected) {
     if (total >= LIMITS.maxTotalChars) {
-      skipped += 1;
+      characterBudgetHit = true;
+      skipped += plan.selected.length - processed;
       limitations.push("Stopped indexing because the total context limit was reached.");
       break;
     }
+    processed += 1;
     try {
       const text = await readRaw(fetchImpl, owner, repo, branch, choice.path);
       const slice = text.slice(0, LIMITS.maxFileChars);
-      if (slice.length < text.length) limitations.push(`Truncated ${choice.path} to ${LIMITS.maxFileChars} characters.`);
+      if (slice.length < text.length) {
+        contentTruncated = true;
+        limitations.push(`Truncated ${choice.path} to ${LIMITS.maxFileChars} characters.`);
+      }
       files[choice.path] = slice;
       total += slice.length;
     } catch {
+      downloadFailed = true;
       skipped += 1;
       limitations.push(`Could not read ${choice.path}.`);
     }
   }
+  const stoppedEarly = processed < plan.selected.length;
 
   let issues: IssueItem[] = [];
   try {
@@ -88,7 +99,16 @@ export async function ingestRepository(url: string, fetchImpl: typeof fetch = fe
       indexed: Object.keys(files).length,
       skipped,
       limitations,
-      coverage: plan.coverage,
+      coverage: coverageFromIndexed({
+        indexedPaths: Object.keys(files),
+        treeTruncated: plan.coverage.truncated,
+        fileCountCapped: plan.fileCountCapped,
+        characterBudgetHit,
+        downloadFailed,
+        contentTruncated,
+        stoppedEarly,
+        oversizedSkipped: plan.oversizedSkipped,
+      }),
     },
   };
 }

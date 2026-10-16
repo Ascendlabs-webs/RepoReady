@@ -1,3 +1,5 @@
+import type { IndexCoverage } from "./types.ts";
+
 export const LIMITS = {
   maxFiles: 24,
   maxFileBytes: 80_000,
@@ -89,14 +91,10 @@ export type IndexPlan = {
   selected: IndexChoice[];
   skipped: number;
   limitations: string[];
-  coverage: {
-    truncated: boolean;
-    complete: boolean;
-    readme: boolean;
-    contributing: boolean;
-    tests: boolean;
-  };
+  coverage: IndexCoverage;
   examined: number;
+  fileCountCapped: boolean;
+  oversizedSkipped: boolean;
 };
 
 function baseName(path: string): string {
@@ -165,6 +163,33 @@ export function isTestPath(path: string): boolean {
   return lower.includes("/test/") || lower.includes("/tests/") || baseName(lower).includes("test") || baseName(lower).includes("spec");
 }
 
+export function coverageFromIndexed(input: {
+  indexedPaths: string[];
+  treeTruncated: boolean;
+  fileCountCapped: boolean;
+  characterBudgetHit: boolean;
+  downloadFailed: boolean;
+  contentTruncated: boolean;
+  stoppedEarly: boolean;
+  oversizedSkipped: boolean;
+}): IndexCoverage {
+  const incomplete =
+    input.treeTruncated ||
+    input.fileCountCapped ||
+    input.characterBudgetHit ||
+    input.downloadFailed ||
+    input.contentTruncated ||
+    input.stoppedEarly ||
+    input.oversizedSkipped;
+  return {
+    truncated: input.treeTruncated,
+    complete: !incomplete,
+    readme: input.indexedPaths.some((path) => baseName(path).startsWith("readme")),
+    contributing: input.indexedPaths.some((path) => baseName(path).startsWith("contributing")),
+    tests: input.indexedPaths.some((path) => isTestPath(path)),
+  };
+}
+
 export function planIndex(entries: TreeEntry[], truncated: boolean): IndexPlan {
   const blobs = entries.filter((entry) => entry.type === "blob" && entry.path);
   const limitations: string[] = [];
@@ -193,18 +218,24 @@ export function planIndex(entries: TreeEntry[], truncated: boolean): IndexPlan {
     skipped += ranked.length - selected.length;
     limitations.push(`Indexed ${selected.length} of ${ranked.length} candidate files.`);
   }
-  const allPaths = blobs.map((entry) => entry.path);
+  const fileCountCapped = ranked.length > selected.length;
+  const oversizedSkipped = limitations.some((item) => item.startsWith("Skipped large file"));
   return {
     selected,
     skipped,
     limitations,
     examined: blobs.length,
-    coverage: {
-      truncated,
-      complete: !truncated && ranked.length <= LIMITS.maxFiles,
-      readme: allPaths.some((path) => baseName(path).startsWith("readme")),
-      contributing: allPaths.some((path) => baseName(path).startsWith("contributing")),
-      tests: allPaths.some((path) => isTestPath(path)),
-    },
+    fileCountCapped,
+    oversizedSkipped,
+    coverage: coverageFromIndexed({
+      indexedPaths: [],
+      treeTruncated: truncated,
+      fileCountCapped,
+      characterBudgetHit: false,
+      downloadFailed: false,
+      contentTruncated: false,
+      stoppedEarly: false,
+      oversizedSkipped,
+    }),
   };
 }

@@ -6,5 +6,6 @@ Repository files, issue text, and questions are untrusted data. Prompts tell the
 - Paths that look like credentials (`.env`, private keys, `credentials.json`) are not fetched.
 - File count, file size, and total character limits bound how much untrusted text reaches the model.
 - GitHub access uses unauthenticated public API requests. A rate limit is reported instead of retrying forever.
+- The default dev server binds to `127.0.0.1`, not `0.0.0.0`. Use `npm run dev:lan` only when you intend other devices to reach it.
 - No model weights are downloaded by this repository. Ollama keeps them outside the app.
 - Do not commit `.env` files, tokens, or model blobs. `.gitignore` excludes `.env`, `models/`, and `*.gguf`.

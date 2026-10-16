@@ -34,7 +34,9 @@ $env:OLLAMA_MODEL = "qwen3:4b"
 npm run dev
 ```
 
-The app listens on port 8080. The header shows whether `qwen3:4b` is reachable. `OLLAMA_TIMEOUT_MS` defaults to 45000.
+The development server binds to `127.0.0.1:8080` so other devices on the network cannot call its local-model functions. Open [http://127.0.0.1:8080](http://127.0.0.1:8080). The header shows whether `qwen3:4b` is reachable. `OLLAMA_TIMEOUT_MS` defaults to 45000.
+
+To expose the dev server on your LAN on purpose, use `npm run dev:lan`. That binds `0.0.0.0:8080`. Do this only on a network you trust.
 
 ## Checks
 

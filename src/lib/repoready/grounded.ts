@@ -51,13 +51,13 @@ async function complete(
   model: string,
 ): Promise<GroundedAnswer> {
   let text = await generateText(prompt(question, chunks), fetchImpl);
-  let check = validateCitations(text, files);
+  let check = validateCitations(text, files, chunks);
   if (!check.valid) {
     text = await generateText(
-      `${prompt(question, chunks)}\n\nYour previous answer had invalid citations (${check.invalid.join(", ")}). Answer again using only the passages and valid [path:Lstart-Lend] citations.`,
+      `${prompt(question, chunks)}\n\nYour previous answer had invalid citations (${check.invalid.join(", ")}). Cite only these passages: ${spanList(chunks)}.`,
       fetchImpl,
     );
-    check = validateCitations(text, files);
+    check = validateCitations(text, files, chunks);
   }
   return {
     origin: "model",
@@ -66,8 +66,12 @@ async function complete(
     model,
     warning: check.valid
       ? undefined
-      : `Verification warning: ${check.invalid.join(", ")}. Those citations do not match the index.`,
+      : `Verification warning: ${check.invalid.join(", ")}. Those citations were not in the passages supplied to the model.`,
   };
+}
+
+function spanList(chunks: Chunk[]): string {
+  return chunks.map((chunk) => `${chunk.path}:L${chunk.startLine}-L${chunk.endLine}`).join(", ");
 }
 
 function prompt(question: string, chunks: Chunk[]): string {

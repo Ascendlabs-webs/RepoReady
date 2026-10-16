@@ -142,12 +142,11 @@ function authPopupPlugin(): Plugin {
   };
 }
 
-// `0.0.0.0:8080` is the live-preview contract — don't change host/port.
-// The dev server starts once `src/router.tsx` and `src/routes/` exist — see
-// AGENTS.md § "First scaffold".
+// Loopback by default so other devices cannot reach local-model routes.
+// Intentional LAN access: `npm run dev:lan` (--host 0.0.0.0). Port stays 8080.
 export default defineConfig(({ command, isPreview }) => ({
   server: {
-    host: "0.0.0.0",
+    host: "127.0.0.1",
     port: 8080,
     strictPort: true,
   },

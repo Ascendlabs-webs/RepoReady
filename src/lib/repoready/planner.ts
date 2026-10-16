@@ -90,11 +90,11 @@ export async function planWithModel(
   }
   let warning: string | undefined;
   const paths = unknownRecommendedPaths(text, snapshot.files);
-  const cites = validateCitations(text, snapshot.files);
+  const cites = validateCitations(text, snapshot.files, chunks);
   if (paths.length > 0 || !cites.valid) {
     try {
       text = await generateText(
-        `${planPrompt(snapshot, issueNumber, chunks)}\n\nYour previous draft named paths or citations that are not in the index. Use only these paths: ${Object.keys(snapshot.files).join(", ")}. Cite them as [path:Lstart-Lend].`,
+        `${planPrompt(snapshot, issueNumber, chunks)}\n\nYour previous draft used citations or paths that were not in the supplied passages. Cite only these passages: ${chunks.map((chunk) => `${chunk.path}:L${chunk.startLine}-L${chunk.endLine}`).join(", ")}.`,
         fetchImpl,
       );
     } catch (error) {
@@ -104,7 +104,7 @@ export async function planWithModel(
       };
     }
     const retryPaths = unknownRecommendedPaths(text, snapshot.files);
-    const retryCites = validateCitations(text, snapshot.files);
+    const retryCites = validateCitations(text, snapshot.files, chunks);
     if (retryPaths.length > 0 || !retryCites.valid) {
       warning = `Verification warning: ${[...retryPaths, ...retryCites.invalid].join(", ") || "citations or paths could not be verified"}.`;
     }

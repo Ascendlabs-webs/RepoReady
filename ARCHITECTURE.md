@@ -16,7 +16,7 @@ The browser never calls Ollama directly. Server functions in `src/lib/repoready/
 
 Indexing (`src/lib/repoready/indexer.ts` and `ingest.ts`) reads the Git tree, drops secrets, binaries, lockfiles, and dependency directories, then fetches at most 24 text files and 96,000 characters.
 
-Retrieval runs before any model call. If nothing matches, the model is not called. Citations must look like `[path:L12-L20]` and fall inside an indexed file. One retry is allowed. A failed check is shown as a verification warning.
+Retrieval runs before any model call. If nothing matches, the model is not called. A citation is valid only when its path is in the passages supplied to that call, the line range exists in the source file, and the range sits inside one of those passages without crossing a gap. One retry is allowed. A failed check is shown as a verification warning. Coverage flags are computed from files that were actually stored, after downloads finish. A truncated tree, a skipped candidate, a failed download, or truncated file text marks the index incomplete.
 
 When Ollama is down, timeout, or returns malformed JSON, the same screen shows the evidence draft and states that it is not a model answer.
 

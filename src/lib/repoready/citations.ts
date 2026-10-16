@@ -2,6 +2,8 @@ const CITE = /\[([^\]\n:]+):L(\d+)(?:-L(\d+))?\]/g;
 
 export type Citation = { path: string; startLine: number; endLine: number; raw: string };
 
+export type EvidenceSpan = { path: string; startLine: number; endLine: number };
+
 export function extractCitations(text: string): Citation[] {
   const found: Citation[] = [];
   for (const match of text.matchAll(CITE)) {
@@ -18,29 +20,43 @@ export function lineCount(content: string): number {
   return content.split("\n").length;
 }
 
+function mergeSpans(spans: EvidenceSpan[]): EvidenceSpan[] {
+  const sorted = [...spans].sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine);
+  const merged: EvidenceSpan[] = [];
+  for (const span of sorted) {
+    const last = merged[merged.length - 1];
+    if (!last || span.startLine > last.endLine + 1) {
+      merged.push({ path: span.path, startLine: span.startLine, endLine: span.endLine });
+    } else if (span.endLine > last.endLine) {
+      last.endLine = span.endLine;
+    }
+  }
+  return merged;
+}
+
 export function validateCitations(
   text: string,
   files: Record<string, string>,
+  evidence: EvidenceSpan[],
 ): { valid: boolean; invalid: string[] } {
   const citations = extractCitations(text);
   if (citations.length === 0) return { valid: false, invalid: ["no citations"] };
   const invalid: string[] = [];
   for (const cite of citations) {
     const content = files[cite.path];
-    if (content == null) {
-      invalid.push(cite.raw);
-      continue;
-    }
-    const lines = lineCount(content);
-    if (
-      !Number.isInteger(cite.startLine) ||
-      !Number.isInteger(cite.endLine) ||
-      cite.startLine < 1 ||
-      cite.endLine < cite.startLine ||
-      cite.endLine > lines
-    ) {
-      invalid.push(cite.raw);
-    }
+    const lines = content == null ? 0 : lineCount(content);
+    const insideFile =
+      content != null &&
+      Number.isInteger(cite.startLine) &&
+      Number.isInteger(cite.endLine) &&
+      cite.startLine >= 1 &&
+      cite.endLine >= cite.startLine &&
+      cite.endLine <= lines;
+    const spans = mergeSpans(evidence.filter((span) => span.path === cite.path));
+    const insideEvidence = spans.some(
+      (span) => cite.startLine >= span.startLine && cite.endLine <= span.endLine,
+    );
+    if (!insideFile || !insideEvidence) invalid.push(cite.raw);
   }
   return { valid: invalid.length === 0, invalid };
 }

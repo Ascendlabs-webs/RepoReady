@@ -12,6 +12,6 @@
 
 2:10 Paste a small public GitHub URL and analyze it. Show the indexed nested paths and any limit note. Ask a question that the README can answer. If GitHub rate-limits the request, show that error and return to the sample.
 
-2:40 Open Gaps and say a missing file is claimed only when the retrieved tree supports it. A truncated tree is labeled partial.
+2:40 Open Gaps and say a missing README, CONTRIBUTING file, or test file is claimed only when the index is complete. A truncated or partial index is labeled as such and does not prove the file is absent.
 
 Stop at 3:00. Do not claim a command succeeded, and do not claim the model answered if the header says it is offline.

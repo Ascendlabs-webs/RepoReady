@@ -319,7 +319,6 @@ export function documentationGaps(snapshot: RepoSnapshot): Gap[] {
   const coverage = snapshot.stats.coverage;
   const gaps: Gap[] = [];
   const indexedReadme = paths.some((path) => /readme/i.test(path.split("/").pop() ?? path));
-  const indexedContributing = paths.some((path) => /contributing/i.test(path.split("/").pop() ?? path));
   const indexedTests = paths.some((path) => /test|spec/i.test(path));
   const commands = analyzeSetup(snapshot.files);
   const hasSetupCommand = commands.some(
@@ -327,52 +326,56 @@ export function documentationGaps(snapshot: RepoSnapshot): Gap[] {
   );
 
   if (coverage) {
-    if (!coverage.readme && !coverage.truncated) {
-      gaps.push({
-        severity: "high",
-        category: "Missing documented setup",
-        description: "No README path was present in the repository tree that was retrieved.",
-        evidence: coverage.complete ? "The retrieved tree was complete." : "The retrieved tree did not list a README.",
-      });
-    } else if (!indexedReadme) {
-      gaps.push({
-        severity: "medium",
-        category: "README not indexed",
-        description: coverage.readme
-          ? "A README exists in the tree but its contents were not indexed, so its instructions were not checked."
-          : "No README contents were indexed. Absence from the repository is not proven because the tree was truncated.",
-        evidence: snapshot.stats.limitations[0] ?? "Index did not include a README body.",
-      });
+    if (!coverage.readme) {
+      gaps.push(
+        coverage.complete && !coverage.truncated
+          ? {
+              severity: "high",
+              category: "Missing documented setup",
+              description: "No README was indexed, and every selected file was indexed.",
+              evidence: "The indexed snapshot contains no README.",
+            }
+          : {
+              severity: "medium",
+              category: "README not indexed",
+              description: "No README contents were indexed. The index is incomplete, so the repository may still have one.",
+              evidence: snapshot.stats.limitations[0] ?? "Index was incomplete.",
+            },
+      );
     }
-    if (!coverage.contributing && !coverage.truncated) {
-      gaps.push({
-        severity: "medium",
-        category: "Missing contributor guidance",
-        description: "No CONTRIBUTING file appeared in the retrieved repository tree.",
-        evidence: "Searched tree paths, not only the indexed subset.",
-      });
-    } else if (!indexedContributing && coverage.truncated) {
-      gaps.push({
-        severity: "low",
-        category: "Contributor guidance not proven",
-        description: "No CONTRIBUTING file was indexed. The tree was truncated, so the file may still exist.",
-        evidence: "Truncated GitHub tree.",
-      });
+    if (!coverage.contributing) {
+      gaps.push(
+        coverage.complete && !coverage.truncated
+          ? {
+              severity: "medium",
+              category: "Missing contributor guidance",
+              description: "No CONTRIBUTING file was indexed, and every selected file was indexed.",
+              evidence: "The indexed snapshot contains no CONTRIBUTING file.",
+            }
+          : {
+              severity: "low",
+              category: "Contributor guidance not proven",
+              description: "No CONTRIBUTING file was indexed. The index is incomplete, so the file may still exist.",
+              evidence: snapshot.stats.limitations[0] ?? "Index was incomplete.",
+            },
+      );
     }
-    if (!coverage.tests && !indexedTests && !coverage.truncated) {
-      gaps.push({
-        severity: "medium",
-        category: "Missing test instructions",
-        description: "No test path appeared in the retrieved repository tree.",
-        evidence: "Searched tree paths for test or spec files.",
-      });
-    } else if (!indexedTests && coverage.truncated) {
-      gaps.push({
-        severity: "low",
-        category: "Tests not proven",
-        description: "No test file was indexed. The tree was truncated, so tests may still exist.",
-        evidence: "Truncated GitHub tree.",
-      });
+    if (!coverage.tests && !indexedTests) {
+      gaps.push(
+        coverage.complete && !coverage.truncated
+          ? {
+              severity: "medium",
+              category: "Missing test instructions",
+              description: "No test file was indexed, and every selected file was indexed.",
+              evidence: "The indexed snapshot contains no test or spec file.",
+            }
+          : {
+              severity: "low",
+              category: "Tests not proven",
+              description: "No test file was indexed. The index is incomplete, so tests may still exist.",
+              evidence: snapshot.stats.limitations[0] ?? "Index was incomplete.",
+            },
+      );
     }
   } else if (!indexedReadme) {
     gaps.push({
