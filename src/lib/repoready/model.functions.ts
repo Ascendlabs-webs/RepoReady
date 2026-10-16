@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { answerWithModel } from "./grounded.ts";
-import { checkModel, type OllamaTarget } from "./ollama.ts";
+import { checkModel, requestTarget, type OllamaTarget } from "./ollama.ts";
 import { planWithModel } from "./planner.ts";
 import type { RepoSnapshot } from "./types.ts";
 
@@ -32,7 +32,7 @@ function readOllama(input: unknown): OllamaTarget {
   if (typeof ollama !== "object" || !ollama) return {};
   const baseUrl = "baseUrl" in ollama ? String((ollama as { baseUrl?: unknown }).baseUrl ?? "").trim() : "";
   const model = "model" in ollama ? String((ollama as { model?: unknown }).model ?? "").trim() : "";
-  return { baseUrl: baseUrl || undefined, model: model || undefined };
+  return requestTarget({ baseUrl: baseUrl || undefined, model: model || undefined });
 }
 
 export const modelHealth = createServerFn({ method: "POST" })

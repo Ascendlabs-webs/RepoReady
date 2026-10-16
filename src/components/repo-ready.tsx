@@ -51,6 +51,7 @@ export function RepoReady() {
     } catch {
       setHealth({
         available: false,
+        provider: "ollama",
         model: target.model || "qwen3:4b",
         baseUrl: target.baseUrl,
         detail: "The model health check failed.",
@@ -147,49 +148,59 @@ export function RepoReady() {
             <p className="mt-2 text-sm text-stone">
               {health
                 ? health.available
-                  ? `Model ${health.model} is connected at ${health.baseUrl}.`
+                  ? health.provider === "hosted"
+                    ? `Model ${health.model} is running on this server.`
+                    : `Model ${health.model} is connected at ${health.baseUrl}.`
                   : `Model offline. ${health.detail}`
-                : "Checking the local model…"}
+                : "Checking the model…"}
             </p>
-            <form
-              className="mt-3 flex max-w-xl flex-col gap-2 sm:flex-row"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void refreshHealth();
-              }}
-            >
-              <label className="sr-only" htmlFor="ollama-url">
-                Ollama URL
-              </label>
-              <input
-                id="ollama-url"
-                value={ollamaUrl}
-                onChange={(event) => setOllamaUrl(event.target.value)}
-                placeholder="http://127.0.0.1:11434"
-                spellCheck={false}
-                className="min-h-11 flex-1 rounded-card border border-line bg-ink px-3 text-sm text-paper outline-none placeholder:text-stone focus:border-signal"
-              />
-              <label className="sr-only" htmlFor="ollama-model">
-                Ollama model
-              </label>
-              <input
-                id="ollama-model"
-                value={ollamaModel}
-                onChange={(event) => setOllamaModel(event.target.value)}
-                placeholder="qwen3:4b"
-                spellCheck={false}
-                className="min-h-11 rounded-card border border-line bg-ink px-3 text-sm text-paper outline-none placeholder:text-stone focus:border-signal sm:w-32"
-              />
-              <button
-                type="submit"
-                className="min-h-11 rounded-card border border-line px-4 text-sm font-medium text-paper"
+            {health?.provider === "hosted" ? (
+              <p className="mt-2 max-w-xl text-xs text-stone">
+                This deployment calls the model from Vercel. The API key stays on the server.
+              </p>
+            ) : (
+              <form
+                className="mt-3 flex max-w-xl flex-col gap-2 sm:flex-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void refreshHealth();
+                }}
               >
-                Check model
-              </button>
-            </form>
-            <p className="mt-1 max-w-xl text-xs text-stone">
-              Ollama address for this server. On a deployed site, 127.0.0.1 is that server, not your laptop.
-            </p>
+                <label className="sr-only" htmlFor="ollama-url">
+                  Ollama URL
+                </label>
+                <input
+                  id="ollama-url"
+                  value={ollamaUrl}
+                  onChange={(event) => setOllamaUrl(event.target.value)}
+                  placeholder="http://127.0.0.1:11434"
+                  spellCheck={false}
+                  className="min-h-11 flex-1 rounded-card border border-line bg-ink px-3 text-sm text-paper outline-none placeholder:text-stone focus:border-signal"
+                />
+                <label className="sr-only" htmlFor="ollama-model">
+                  Ollama model
+                </label>
+                <input
+                  id="ollama-model"
+                  value={ollamaModel}
+                  onChange={(event) => setOllamaModel(event.target.value)}
+                  placeholder="qwen3:4b"
+                  spellCheck={false}
+                  className="min-h-11 rounded-card border border-line bg-ink px-3 text-sm text-paper outline-none placeholder:text-stone focus:border-signal sm:w-32"
+                />
+                <button
+                  type="submit"
+                  className="min-h-11 rounded-card border border-line px-4 text-sm font-medium text-paper"
+                >
+                  Check model
+                </button>
+              </form>
+            )}
+            {health?.provider === "hosted" ? null : (
+              <p className="mt-1 max-w-xl text-xs text-stone">
+                Ollama address for this server. On a deployed site, 127.0.0.1 is that server, not your laptop.
+              </p>
+            )}
           </div>
           <div className="flex rounded-card border border-line bg-ink p-1" role="group" aria-label="Data source">
             <ModeButton active={mode === "sample"} onClick={() => setMode("sample")}>

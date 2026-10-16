@@ -6,6 +6,15 @@ RepoReady is an evidence-grounded onboarding app for public GitHub repositories.
 
 If Ollama is not running, the app still shows retrieved evidence and says that the text is not a model answer.
 
+Ollama cannot run inside Vercel. On a Vercel deployment the server calls a hosted model instead. Add these in the Vercel project settings, then redeploy:
+
+```
+XAI_API_KEY=your key from https://console.x.ai
+MODEL_NAME=grok-4.20-0309-non-reasoning
+```
+
+The browser never sees the key. `MODEL_BASE_URL` is optional and defaults to `https://api.x.ai/v1`. Local `npm run dev` still uses Ollama unless you set `MODEL_PROVIDER=hosted` and `XAI_API_KEY`.
+
 ## Requirements
 
 - Node.js 22 or newer

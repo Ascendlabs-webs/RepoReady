@@ -71,6 +71,7 @@ export type ModelHealth = {
   model: string;
   baseUrl: string;
   detail: string;
+  provider: "ollama" | "hosted";
 };
 
 export type AnswerOrigin = "model" | "insufficient" | "model-unavailable";

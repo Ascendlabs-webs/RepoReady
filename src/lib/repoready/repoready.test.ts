@@ -5,7 +5,7 @@ import { analyzeSetup, documentationGaps, parseGithubUrl, retrieve } from "./eng
 import { answerWithModel } from "./grounded.ts";
 import { ingestRepository } from "./ingest.ts";
 import { LIMITS, planIndex } from "./indexer.ts";
-import { OllamaError, checkModel, generateText, normalizeOllamaBaseUrl } from "./ollama.ts";
+import { OllamaError, checkModel, generateText, hostedFromEnv, normalizeOllamaBaseUrl, requestTarget } from "./ollama.ts";
 import { evidencePlan, planWithModel } from "./planner.ts";
 import { SAMPLE_REPO } from "./sample.ts";
 import type { RepoSnapshot } from "./types.ts";
@@ -341,6 +341,38 @@ test("ollama reports unavailable, timeout, and malformed responses", async () =>
     throw Object.assign(new Error("slow"), { name: "TimeoutError" });
   };
   await assert.rejects(() => generateText("hi", timeout), (error: unknown) => error instanceof OllamaError && error.code === "timeout");
+});
+
+test("Vercel uses a hosted model and ignores the browser Ollama URL", async () => {
+  const secret = "test-key-not-real";
+  const vercel = { VERCEL: "1", XAI_API_KEY: secret, MODEL_NAME: "grok-4.20-0309-non-reasoning" };
+  const target = requestTarget({ baseUrl: "http://127.0.0.1:11434", model: "qwen3:4b" }, vercel);
+  assert.equal(target.hosted?.baseUrl, "https://api.x.ai/v1");
+  assert.equal(target.hosted?.model, "grok-4.20-0309-non-reasoning");
+  assert.equal(target.baseUrl, undefined);
+  assert.equal(requestTarget({ baseUrl: "http://127.0.0.1:11434" }, { XAI_API_KEY: secret }).baseUrl, "http://127.0.0.1:11434");
+  assert.equal(requestTarget({ baseUrl: "http://127.0.0.1:11434" }, { VERCEL: "1" }).deployment, "vercel");
+  assert.throws(() => hostedFromEnv({ VERCEL: "1", XAI_API_KEY: secret, MODEL_BASE_URL: "http://127.0.0.1:11434" }), /https/);
+  assert.throws(() => hostedFromEnv({ VERCEL: "1", XAI_API_KEY: secret, MODEL_BASE_URL: "https://10.0.0.5" }), /public model API/);
+
+  let auth = "";
+  let seen = "";
+  const fetchImpl: typeof fetch = async (input, init) => {
+    seen = String(input);
+    auth = new Headers(init?.headers).get("authorization") ?? "";
+    if (seen.endsWith("/models")) return Response.json({ data: [{ id: "grok-4.20-0309-non-reasoning" }] });
+    return Response.json({ choices: [{ message: { content: "See [README.md:L1-L1]." } }] });
+  };
+  const health = await checkModel(fetchImpl, target);
+  assert.equal(health.available, true);
+  assert.equal(health.provider, "hosted");
+  assert.equal(seen, "https://api.x.ai/v1/models");
+  assert.equal(auth, `Bearer ${secret}`);
+  assert.equal(JSON.stringify(health).includes(secret), false);
+  const offline = await checkModel(async () => Response.json({}), { deployment: "vercel" });
+  assert.match(offline.detail, /XAI_API_KEY/);
+  assert.equal(await generateText("question", fetchImpl, target), "See [README.md:L1-L1].");
+  assert.equal(seen, "https://api.x.ai/v1/chat/completions");
 });
 
 test("answerWithModel does not call the model without evidence and labels outages", async () => {
