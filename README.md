@@ -10,7 +10,7 @@ If Ollama is not running, the app still shows retrieved evidence and says that t
 
 - Node.js 22 or newer
 - A public GitHub repository for live indexing. Unauthenticated requests are rate limited.
-- Optional: [Ollama](https://ollama.com) with `qwen3:4b` for model answers
+-  [Ollama](https://ollama.com) with `qwen3:4b` for model answers
 
 ## Install and run
 
